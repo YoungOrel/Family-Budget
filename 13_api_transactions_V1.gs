@@ -377,3 +377,14 @@ function updateTransactionCategory(args){
   if (typeof cacheInvalidate === 'function') { try { cacheInvalidate('tx:Y'+year); } catch(e){} }
   return { ok:true };
 }
+
+function exportTransactionsCsv(payload){
+  var items = (payload && payload.items) || [];
+  var esc = function(v){ if(v==null) return ''; var s=String(v).replace(/"/g,'""'); return /[",\n]/.test(s)?('"'+s+'"'):s; };
+  var head = ['date','fund','category','amount','details','comment'];
+  var rows = [head.join(',')];
+  items.forEach(function(it){
+    rows.push([esc(it.date), esc(it.fund), esc(it.category), esc(it.amount), esc(it.details), esc(it.comment)].join(','));
+  });
+  return rows.join('\n');
+}
