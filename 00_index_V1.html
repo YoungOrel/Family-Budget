@@ -187,7 +187,7 @@
     .ops-loader__backdrop{position:absolute;inset:0;background:rgba(0,0,0,.45);backdrop-filter:saturate(120%) blur(2px)}
     .ops-loader__card{position:relative;background:#141414;border:1px solid #222;border-radius:12px;padding:12px 16px;font-weight:700;color:#ffcc00}
     .ops-container{position:relative;}
-    #ops-toolbar{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;color:var(--muted);font-size:13px;}
+    .ops-toolbar{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;color:var(--muted);font-size:13px;}
     #ops-table-wrap{max-height:420px;overflow:auto;}
     #ops-pager{display:flex;flex-direction:column;gap:8px;margin-top:12px;}
     .ops-table thead th{ position:sticky; top:0; background:#101010; z-index:2 }
@@ -198,6 +198,42 @@
     .split-row{ display:flex; gap:8px; align-items:center; }
     .split-row .input.fund{ flex: 1 1 160px; }
     .split-row .input.amt{ width:110px; }
+    .ops-card-head{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:12px;flex-wrap:wrap;}
+    .ops-actions{display:flex;gap:8px;flex-wrap:wrap;}
+    .chip--toggle{padding-inline:10px;}
+    .toggle{display:flex;align-items:center;gap:8px;cursor:pointer;}
+    .chip--toggle input{accent-color:var(--y-400);}
+    .ops-badges{display:flex;align-items:center;gap:6px;flex-wrap:wrap;}
+    .ops-badge{padding:2px 6px;border-radius:8px;font-size:11px;text-transform:uppercase;letter-spacing:0.3px;border:1px solid var(--outline);background:rgba(255,255,255,0.08);color:var(--muted);}
+    .ops-badge--internal{background:rgba(253,199,0,0.16);color:var(--y-300);border-color:rgba(253,199,0,0.35);}
+    .ops-badge--duplicate{background:rgba(255,90,95,0.18);color:#ffb3b6;border-color:rgba(255,90,95,0.35);}
+    .ops-badge--transfer{background:rgba(38,208,124,0.18);color:#8de0b7;border-color:rgba(38,208,124,0.35);}
+    .ops-row--muted{opacity:0.7;}
+    .ops-table td.tags{font-size:12px;color:var(--muted);}
+    .ops-table td.tags span{display:inline-block;background:rgba(255,255,255,0.08);padding:2px 6px;border-radius:8px;margin-right:4px;margin-top:2px;}
+    body[data-device="ios"], body[data-device="android"]{font-size:15px;}
+    body[data-device="ios"] .btn, body[data-device="android"] .btn{padding:12px 16px;}
+    body[data-device="ios"] .tab, body[data-device="android"] .tab{padding:10px 14px;}
+    .manual-form{display:flex;flex-direction:column;gap:12px;}
+    .manual-form .form-grid{display:grid;gap:12px;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));}
+    .manual-form label{display:flex;flex-direction:column;gap:6px;font-size:13px;}
+    .manual-form input, .manual-form select{background:var(--card-soft);color:var(--text);border:1px solid var(--outline);border-radius:8px;padding:8px 10px;}
+    .manual-form .form-error{color:var(--danger);font-size:13px;}
+    @media (max-width: 920px){
+      .filters{flex-direction:column;align-items:stretch;gap:10px;}
+      .filters .chip{width:100%;justify-content:space-between;}
+      .filters .chip select, .filters .chip input{width:100%;margin-top:6px;}
+      .ops-card-head{flex-direction:column;align-items:flex-start;gap:10px;}
+      .ops-actions{width:100%;}
+      .ops-actions .btn{flex:1 1 auto;text-align:center;}
+    }
+    @media (max-width: 768px){
+      .ops-table th.col--mobile-hide, .ops-table td.col--mobile-hide{display:none;}
+      #ops-table-wrap{max-height:none;}
+      .page{padding:12px;}
+      .filters{gap:8px;}
+      .ops-toolbar{flex-direction:column;align-items:flex-start;gap:6px;}
+    }
     .split-row .input.det{ flex: 2 1 220px; }
     .split-row .btn{ padding:6px 10px; }
     .split-editor{ display:grid; gap:12px; }
@@ -481,18 +517,30 @@
               <option value="200">200</option>
             </select>
           </span>
+          <span class="chip chip--toggle">
+            <label class="toggle">
+              <input type="checkbox" id="ops-show-internal" />
+              <span>Показувати внутрішні</span>
+            </label>
+          </span>
           <button class="btn" id="ops-apply">Застосувати</button>
         </div>
       </div>
 
-      <section class="card" style="margin-top:16px; position:relative;">
-        <h3>Результати</h3>
+      <section class="card ops-card" style="margin-top:16px; position:relative;">
+        <div class="ops-card-head">
+          <h3>Результати</h3>
+          <div class="ops-actions">
+            <button class="btn btn--primary" id="btn-new-tx">Нова операція</button>
+            <button class="btn btn--ghost" id="btn-import-mono">Імпорт з Monobank</button>
+          </div>
+        </div>
         <div class="ops-container">
           <div class="ops-loader" id="ops-loader" aria-hidden="true" style="display:none">
             <div class="ops-loader__backdrop"></div>
             <div class="ops-loader__card">Завантаження…</div>
           </div>
-          <div id="ops-toolbar"></div>
+          <div id="ops-toolbar" class="ops-toolbar"></div>
           <div id="ops-table-wrap">
             <table class="ops-table">
               <thead><tr id="ops-thead"></tr></thead>
@@ -567,6 +615,7 @@
 
     let BOOT = null;
     let CURRENT = {year: null, month: null};
+    const OPS_DICTIONARIES = { funds: [], accounts: [], categories: [] };
 
     /* ===== Utils ===== */
     function fmtMoney(x){
@@ -595,6 +644,45 @@
         b.className = 'bar';
         b.style.height = (6 + (Math.abs(v)/max)*28) + 'px';
         container.appendChild(b);
+      });
+    }
+
+    function callServer(method, payload){
+      if (!isAppsScript){
+        return Promise.reject(new Error('Apps Script середовище недоступне.')); 
+      }
+      return new Promise((resolve, reject) => {
+        const runner = google.script.run.withSuccessHandler(resolve).withFailureHandler(reject);
+        if (typeof runner[method] !== 'function'){
+          reject(new Error(`Метод ${method} недоступний на сервері`));
+          return;
+        }
+        runner[method](payload);
+      });
+    }
+
+    function applyPlatformClass(info){
+      const device = info && info.device ? info.device : 'desktop';
+      document.body.dataset.device = device;
+    }
+
+    function addToDictionary(arr, value){
+      if (!Array.isArray(arr)) return;
+      const v = String(value || '').trim();
+      if (!v) return;
+      if (!arr.includes(v)) arr.push(v);
+    }
+
+    function escapeHtml(value){
+      return String(value || '').replace(/[&<>"']/g, (ch) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch] || ch));
+    }
+
+    function absorbDictionaryFromItems(items){
+      if (!Array.isArray(items)) return;
+      items.forEach(item => {
+        addToDictionary(OPS_DICTIONARIES.accounts, item && item.account);
+        addToDictionary(OPS_DICTIONARIES.funds, item && item.fund);
+        addToDictionary(OPS_DICTIONARIES.categories, item && item.category);
       });
     }
 
@@ -752,7 +840,8 @@
     // ===== OPERATIONS VIEW =====
     const OPS_STATE = {
       page: 1,
-      lastMeta: null
+      lastMeta: null,
+      showInternal: false
     };
 
     function showTab(name){
@@ -833,42 +922,296 @@
       const toInput = document.getElementById('ops-to');
       const fundSelect = document.getElementById('ops-fund');
       const sizeSelect = document.getElementById('ops-size');
+      const internalToggle = document.getElementById('ops-show-internal');
       const from = fromInput && fromInput.value ? fromInput.value : null;
       const to = toInput && toInput.value ? toInput.value : null;
       const fund = fundSelect ? String(fundSelect.value || '').trim() : '';
       const sizeValue = sizeSelect && sizeSelect.value ? Number(sizeSelect.value) : 50;
       const size = Number.isFinite(sizeValue) && sizeValue > 0 ? sizeValue : 50;
-      return { from, to, fund, size };
+      const showInternal = internalToggle ? internalToggle.checked : false;
+      return { from, to, fund, size, showInternal };
+    }
+
+    function buildOptionsHtml(items, placeholder){
+      const list = Array.isArray(items) ? items : [];
+      let html = '';
+      if (placeholder){
+        html += `<option value="">${escapeHtml(placeholder)}</option>`;
+      }
+      list.forEach(value => {
+        const safe = escapeHtml(value);
+        html += `<option value="${safe}">${safe}</option>`;
+      });
+      return html;
+    }
+
+    async function openManualTxModal(){
+      const formId = `manual-tx-${Date.now()}`;
+      const errorId = `${formId}-error`;
+      const hasAccounts = Array.isArray(OPS_DICTIONARIES.accounts) && OPS_DICTIONARIES.accounts.length > 0;
+      const hasFunds = Array.isArray(OPS_DICTIONARIES.funds) && OPS_DICTIONARIES.funds.length > 0;
+      const hasCategories = Array.isArray(OPS_DICTIONARIES.categories) && OPS_DICTIONARIES.categories.length > 0;
+      const accountControl = hasAccounts
+        ? `<select name="account" required>${buildOptionsHtml(OPS_DICTIONARIES.accounts, 'Оберіть рахунок')}</select>`
+        : `<input type="text" name="account" placeholder="Рахунок" required />`;
+      const fundControl = hasFunds
+        ? `<select name="fund" required>${buildOptionsHtml(OPS_DICTIONARIES.funds, 'Оберіть фонд')}</select>`
+        : `<input type="text" name="fund" placeholder="Фонд" required />`;
+      const categoryControl = hasCategories
+        ? `<select name="category" required>${buildOptionsHtml(OPS_DICTIONARIES.categories, 'Категорія')}</select>`
+        : `<input type="text" name="category" placeholder="Категорія" required />`;
+      const linkedControl = hasAccounts
+        ? `<select name="linkedAccount" disabled>${buildOptionsHtml(OPS_DICTIONARIES.accounts, 'Оберіть рахунок')}</select>`
+        : `<input type="text" name="linkedAccount" placeholder="Пов’язаний рахунок" disabled />`;
+      const html = `
+        <form id="${formId}" class="manual-form" autocomplete="off">
+          <div class="form-grid">
+            <label>Дата<input type="date" name="date" required /></label>
+            <label>Рахунок${accountControl}</label>
+            <label>Фонд${fundControl}</label>
+            <label>Категорія${categoryControl}</label>
+            <label>Сума<input type="number" step="0.01" name="amount" required /></label>
+            <label>Деталі<input type="text" name="details" placeholder="Опис або мерчант" /></label>
+            <label>Коментар<input type="text" name="comment" placeholder="Коментар" /></label>
+            <label>Теги<input type="text" name="tags" placeholder="через кому" /></label>
+          </div>
+          <label class="toggle" style="margin-top:12px;">
+            <input type="checkbox" name="isTransfer" />
+            <span>Переказ між власними рахунками</span>
+          </label>
+          <label style="display:block;margin-top:8px;">
+            Пов’язаний рахунок
+            ${linkedControl}
+          </label>
+          <div class="muted" style="margin-top:8px;font-size:12px;">Прикріплення файлів наразі не підтримується.</div>
+          <div class="form-error" id="${errorId}"></div>
+        </form>`;
+
+      let saved = false;
+      const ok = await uiModal.custom({
+        title: 'Нова операція',
+        body: html,
+        okText: 'Зберегти',
+        showCancel: true,
+        trap: false,
+        onOpen: ({ bodyEl }) => {
+          const form = bodyEl.querySelector(`#${formId}`);
+          if (!form) return;
+          const dateInput = form.querySelector('input[name="date"]');
+          if (dateInput && !dateInput.value){
+            dateInput.value = new Date().toISOString().slice(0,10);
+          }
+          const transferCheckbox = form.querySelector('input[name="isTransfer"]');
+          const linkedField = form.querySelector('[name="linkedAccount"]');
+          if (transferCheckbox && linkedField){
+            transferCheckbox.addEventListener('change', () => {
+              linkedField.disabled = !transferCheckbox.checked;
+            });
+          }
+        },
+        beforeOk: async ({ bodyEl }) => {
+          const form = bodyEl.querySelector(`#${formId}`);
+          const errorBox = bodyEl.querySelector(`#${errorId}`);
+          if (errorBox) errorBox.textContent = '';
+          if (!form) return false;
+          const formData = new FormData(form);
+          const payload = {
+            date: formData.get('date'),
+            account: formData.get('account'),
+            fund: formData.get('fund'),
+            category: formData.get('category'),
+            amount: formData.get('amount'),
+            details: formData.get('details'),
+            comment: formData.get('comment'),
+            tags: formData.get('tags'),
+            isTransfer: formData.get('isTransfer') === 'on',
+            linkedAccount: formData.get('linkedAccount')
+          };
+          if (payload.isTransfer && !payload.linkedAccount){
+            if (errorBox) errorBox.textContent = 'Для переказу вкажіть пов’язаний рахунок.';
+            return false;
+          }
+          showOpsLoader();
+          try {
+            const res = await callServer('createManualTransaction', payload);
+            saved = true;
+            addToDictionary(OPS_DICTIONARIES.accounts, payload.account);
+            addToDictionary(OPS_DICTIONARIES.accounts, payload.linkedAccount);
+            addToDictionary(OPS_DICTIONARIES.funds, payload.fund);
+            addToDictionary(OPS_DICTIONARIES.categories, payload.category);
+            populateOpsFunds([payload.fund]);
+            OPS_STATE.page = 1;
+            await loadOperations();
+            return true;
+          } catch (err) {
+            const message = (err && err.message) ? err.message : String(err || 'Не вдалося зберегти операцію');
+            if (errorBox) errorBox.textContent = message;
+            return false;
+          } finally {
+            hideOpsLoader();
+          }
+        }
+      });
+      if (ok && saved){
+        await uiModal.alert('Операцію збережено успішно.', 'Готово');
+      }
+    }
+
+    async function openImportMonoModal(){
+      const formId = `mono-import-${Date.now()}`;
+      const errorId = `${formId}-error`;
+      const html = `
+        <form id="${formId}" class="manual-form" autocomplete="off">
+          <label>Період з<input type="date" name="from" required /></label>
+          <label>по<input type="date" name="to" required /></label>
+          <div class="form-error" id="${errorId}"></div>
+        </form>`;
+      let importedSummary = null;
+      const ok = await uiModal.custom({
+        title: 'Імпорт з Monobank',
+        body: html,
+        okText: 'Імпортувати',
+        showCancel: true,
+        onOpen: ({ bodyEl }) => {
+          const form = bodyEl.querySelector(`#${formId}`);
+          if (!form) return;
+          const to = new Date();
+          const from = new Date(to.getTime() - 29*24*60*60*1000);
+          const fromInput = form.querySelector('input[name="from"]');
+          const toInput = form.querySelector('input[name="to"]');
+          if (fromInput && !fromInput.value){ fromInput.value = from.toISOString().slice(0,10); }
+          if (toInput && !toInput.value){ toInput.value = to.toISOString().slice(0,10); }
+        },
+        beforeOk: async ({ bodyEl }) => {
+          const form = bodyEl.querySelector(`#${formId}`);
+          const errorBox = bodyEl.querySelector(`#${errorId}`);
+          if (errorBox) errorBox.textContent = '';
+          if (!form) return false;
+          const formData = new FormData(form);
+          const payload = {
+            from: formData.get('from'),
+            to: formData.get('to')
+          };
+          showOpsLoader();
+          try {
+            const res = await callServer('importMonobankStatement', payload);
+            importedSummary = res;
+            if (Array.isArray(res && res.accounts)){
+              res.accounts.forEach(acc => addToDictionary(OPS_DICTIONARIES.accounts, acc && acc.name));
+            }
+            OPS_STATE.page = 1;
+            await loadOperations();
+            return true;
+          } catch (err) {
+            const message = (err && err.message) ? err.message : String(err || 'Не вдалося імпортувати виписку');
+            if (errorBox) errorBox.textContent = message;
+            return false;
+          } finally {
+            hideOpsLoader();
+          }
+        }
+      });
+      if (ok && importedSummary){
+        const text = `Імпортовано: ${importedSummary.imported || 0}\nОновлено: ${importedSummary.updated || 0}\nПозначено дублем/внутрішніх: ${importedSummary.duplicates || 0}`;
+        await uiModal.alert(text.replace(/\n/g, '<br>'), 'Імпорт завершено');
+      }
+    }
+
+    async function openDuplicateResolver(itemId){
+      if (!itemId) return;
+      const items = Array.isArray(window.__opsLastItems) ? window.__opsLastItems : [];
+      const item = items.find(row => String(row.itemId || row.id || '') === itemId);
+      if (!item){
+        await uiModal.alert('Не знайдено дані транзакції для обробки дубля.', 'Помилка');
+        return;
+      }
+      const formId = `dupe-${Date.now()}`;
+      const html = `
+        <form id="${formId}" class="manual-form" style="display:grid;gap:12px;">
+          <div class="muted">${item.details || ''}</div>
+          <label class="toggle"><input type="radio" name="dupe" value="merge" checked /><span>Злити (залишити один запис)</span></label>
+          <label class="toggle"><input type="radio" name="dupe" value="keepBoth" /><span>Залишити обидва</span></label>
+          <label class="toggle"><input type="radio" name="dupe" value="markInternal" /><span>Позначити як внутрішній</span></label>
+        </form>`;
+      let resolved = false;
+      const ok = await uiModal.custom({
+        title: 'Розв’язання дубля',
+        body: html,
+        okText: 'Застосувати',
+        showCancel: true,
+        beforeOk: async ({ bodyEl }) => {
+          const form = bodyEl.querySelector(`#${formId}`);
+          if (!form) return false;
+          const formData = new FormData(form);
+          const action = formData.get('dupe');
+          showOpsLoader();
+          try {
+            await callServer('resolveDuplicate', { itemId, action });
+            resolved = true;
+            await loadOperations();
+            return true;
+          } catch (err) {
+            const message = (err && err.message) ? err.message : String(err || 'Не вдалося оновити запис');
+            await uiModal.alert(message, 'Помилка');
+            return false;
+          } finally {
+            hideOpsLoader();
+          }
+        }
+      });
+      if (ok && resolved){
+        await uiModal.alert('Оновлено стан дубля.', 'Готово');
+      }
     }
 
     function renderOperations(items){
       const headRow = document.getElementById('ops-thead');
       const body = document.getElementById('ops-tbody');
       if (!headRow || !body) return;
-      if (!headRow.hasChildNodes()){
-        ['Дата', 'Фонд', 'Категорія', 'Сума', 'Деталі', 'Коментар', 'Дії'].forEach(label => {
-          const th = document.createElement('th');
-          th.textContent = label;
-          headRow.appendChild(th);
-        });
-      }
+      const columns = [
+        { key: 'date', label: 'Дата' },
+        { key: 'account', label: 'Рахунок' },
+        { key: 'fund', label: 'Фонд' },
+        { key: 'category', label: 'Категорія', mobileHide: true },
+        { key: 'amount', label: 'Сума' },
+        { key: 'details', label: 'Деталі' },
+        { key: 'status', label: 'Статус', mobileHide: true },
+        { key: 'tags', label: 'Мітки', mobileHide: true },
+        { key: 'comment', label: 'Коментар', mobileHide: true },
+        { key: 'actions', label: 'Дії' }
+      ];
+      headRow.innerHTML = '';
+      columns.forEach(col => {
+        const th = document.createElement('th');
+        th.textContent = col.label;
+        if (col.mobileHide) th.classList.add('col--mobile-hide');
+        headRow.appendChild(th);
+      });
+
       body.innerHTML = '';
       const list = Array.isArray(items) ? items : [];
-      // DEBUG: показати, якщо відсутні ідентифікатори
-      (list || []).forEach(it => {
-        if (!it.itemId && !it.id && !it.txId) {
-          console.warn('Row without tx-id keys', it);
+      const filtered = list.filter(item => {
+        if (!OPS_STATE.showInternal && item.isInternal){
+          return false;
         }
-        if (!it.bankId && !it.id && !it.groupId) {
-          console.warn('Row without bank-id keys', it);
-        }
+        return true;
       });
-      list.forEach(item => {
+
+      filtered.forEach(item => {
         const tr = document.createElement('tr');
+        const isDuplicate = !!item.duplicateOf || item.internalType === 'duplicate';
+        const isInternal = !!item.isInternal;
+        if (isDuplicate || isInternal){
+          tr.classList.add('ops-row--muted');
+        }
 
         const dateCell = document.createElement('td');
         dateCell.textContent = item && item.date ? new Date(item.date).toLocaleDateString('uk-UA') : '—';
         tr.appendChild(dateCell);
+
+        const accountCell = document.createElement('td');
+        accountCell.textContent = item && item.account ? item.account : '—';
+        tr.appendChild(accountCell);
 
         const fundCell = document.createElement('td');
         fundCell.textContent = item && item.fund ? item.fund : '—';
@@ -876,6 +1219,7 @@
 
         const categoryCell = document.createElement('td');
         categoryCell.textContent = item && item.category ? item.category : '—';
+        categoryCell.classList.add('col--mobile-hide');
         tr.appendChild(categoryCell);
 
         const amountCell = document.createElement('td');
@@ -888,11 +1232,78 @@
         tr.appendChild(amountCell);
 
         const detailsCell = document.createElement('td');
-        detailsCell.textContent = item && item.details ? item.details : '';
+        const detailParts = [];
+        if (item && item.details) detailParts.push(item.details);
+        if (item && item.mcc) detailParts.push(`MCC ${item.mcc}`);
+        detailsCell.textContent = detailParts.join(' · ');
         tr.appendChild(detailsCell);
+
+        const statusCell = document.createElement('td');
+        statusCell.classList.add('col--mobile-hide');
+        const badges = document.createElement('div');
+        badges.className = 'ops-badges';
+        if (item && item.source){
+          const b = document.createElement('span');
+          b.className = 'ops-badge';
+          b.textContent = item.source === 'mono' ? 'Monobank' : item.source;
+          badges.appendChild(b);
+        }
+        if (isInternal){
+          const b = document.createElement('span');
+          b.className = 'ops-badge ops-badge--internal';
+          b.textContent = 'Внутрішня';
+          badges.appendChild(b);
+          if (item.internalType === 'jarTopUp' || item.internalType === 'jarWithdraw'){
+            const b2 = document.createElement('span');
+            b2.className = 'ops-badge ops-badge--transfer';
+            b2.textContent = item.internalType === 'jarTopUp' ? 'Jar ↑' : 'Jar ↓';
+            badges.appendChild(b2);
+          }
+          if (item.isTransfer || item.internalType === 'transfer'){
+            const b3 = document.createElement('span');
+            b3.className = 'ops-badge ops-badge--transfer';
+            b3.textContent = 'Переказ';
+            badges.appendChild(b3);
+            if (item.linkedAccount){
+              const b4 = document.createElement('span');
+              b4.className = 'ops-badge';
+              b4.textContent = `↔ ${item.linkedAccount}`;
+              badges.appendChild(b4);
+            }
+          }
+        }
+        if (isDuplicate){
+          const b = document.createElement('span');
+          b.className = 'ops-badge ops-badge--duplicate';
+          b.textContent = 'Дубль';
+          badges.appendChild(b);
+        }
+        if (!badges.childElementCount){
+          const b = document.createElement('span');
+          b.className = 'ops-badge';
+          b.textContent = 'Факт';
+          badges.appendChild(b);
+        }
+        statusCell.appendChild(badges);
+        tr.appendChild(statusCell);
+
+        const tagsCell = document.createElement('td');
+        tagsCell.className = 'tags col--mobile-hide';
+        const tags = Array.isArray(item && item.tags) ? item.tags : [];
+        if (tags.length){
+          tags.forEach(tag => {
+            const span = document.createElement('span');
+            span.textContent = tag;
+            tagsCell.appendChild(span);
+          });
+        } else {
+          tagsCell.textContent = '—';
+        }
+        tr.appendChild(tagsCell);
 
         const commentCell = document.createElement('td');
         commentCell.textContent = item && item.comment ? item.comment : '';
+        commentCell.classList.add('col--mobile-hide');
         tr.appendChild(commentCell);
 
         const actionsCell = document.createElement('td');
@@ -909,8 +1320,16 @@
         splitBtn.setAttribute('data-bank-id', String(bankId || ''));
         splitBtn.setAttribute('title', `itemId=${rawItemId}; id=${rawId}; bankId=${rawBankId}`);
         actionsCell.appendChild(splitBtn);
-        tr.appendChild(actionsCell);
 
+        if (isDuplicate){
+          const resolveBtn = document.createElement('button');
+          resolveBtn.className = 'btn btn--ghost btn-resolve-duplicate';
+          resolveBtn.textContent = 'Вирішити дубль';
+          resolveBtn.dataset.itemId = item.itemId || '';
+          actionsCell.appendChild(resolveBtn);
+        }
+
+        tr.appendChild(actionsCell);
         body.appendChild(tr);
       });
     }
@@ -970,6 +1389,7 @@
       ensureOpsDefaultPeriod();
       const filters = collectOpsFilters();
       const year = CURRENT.year || (new Date()).getFullYear();
+      OPS_STATE.showInternal = !!filters.showInternal;
       const params = {
         year,
         from: filters.from,
@@ -990,6 +1410,7 @@
           const meta = res && res.meta ? res.meta : null;
           const items = (res && res.items) || res || [];
           window.__opsLastItems = Array.isArray(items) ? items.slice() : [];
+          absorbDictionaryFromItems(window.__opsLastItems);
           OPS_STATE.lastMeta = meta;
           if (meta && typeof meta.page === 'number') {
             OPS_STATE.page = meta.page;
@@ -1007,6 +1428,7 @@
             comment: row.comment || ''
           })) : [];
           window.__opsLastItems = mockItems.slice();
+          absorbDictionaryFromItems(window.__opsLastItems);
           OPS_STATE.lastMeta = { page: 1, pages: 1, total: mockItems.length, size: filters.size };
           OPS_STATE.page = OPS_STATE.lastMeta.page;
           renderOperations(mockItems);
@@ -1043,6 +1465,26 @@
           loadOperations();
         });
       }
+      const newBtn = document.getElementById('btn-new-tx');
+      if (newBtn){
+        newBtn.addEventListener('click', () => {
+          openManualTxModal();
+        });
+      }
+      const importBtn = document.getElementById('btn-import-mono');
+      if (importBtn){
+        importBtn.addEventListener('click', () => {
+          openImportMonoModal();
+        });
+      }
+      const internalToggle = document.getElementById('ops-show-internal');
+      if (internalToggle){
+        internalToggle.checked = OPS_STATE.showInternal;
+        internalToggle.addEventListener('change', () => {
+          OPS_STATE.page = 1;
+          loadOperations();
+        });
+      }
     }
 
     async function init(){
@@ -1056,6 +1498,17 @@
               .getBootstrap();
           });
           BOOT = boot;
+          try {
+            const platformInfo = await callServer('getPlatformInfo', navigator.userAgent);
+            applyPlatformClass(platformInfo);
+          } catch (platformErr) {
+            if (boot && boot.settings && boot.settings.platform){
+              applyPlatformClass(boot.settings.platform);
+            }
+          }
+          OPS_DICTIONARIES.funds = Array.isArray(boot?.funds) ? boot.funds.slice() : [];
+          OPS_DICTIONARIES.accounts = Array.isArray(boot?.accounts) ? boot.accounts.slice() : [];
+          OPS_DICTIONARIES.categories = Array.isArray(boot?.categories) ? boot.categories.slice() : [];
           CURRENT.year = boot && boot.settings ? boot.settings.activeYear : CURRENT.year;
 
           const model = await new Promise((resolve, reject) => {
@@ -1122,6 +1575,9 @@
           const mock = buildMock();
           CURRENT.year = 2025;
           CURRENT.month = mock.monthKey;
+          const ua = navigator.userAgent || '';
+          const device = /android/i.test(ua) ? 'android' : (/iphone|ipad|ipod/i.test(ua) ? 'ios' : 'desktop');
+          applyPlatformClass({ device, ua });
           fillMonths(CURRENT.year, [mock.monthKey]);
           UI.month.addEventListener('change', (e) => {
             CURRENT.month = e.target.value;
@@ -1134,6 +1590,9 @@
             });
           }
           populateOpsFunds((mock.items || []).map(row => row.fund).filter(Boolean));
+          OPS_DICTIONARIES.funds = (mock.items || []).map(row => row.fund).filter(Boolean);
+          OPS_DICTIONARIES.accounts = [];
+          OPS_DICTIONARIES.categories = [];
           ensureOpsDefaultPeriod();
           renderDashboard(mock);
         }
@@ -1196,6 +1655,12 @@
 (function setupSplitActions(){
   const root = document.querySelector('.ops-table') || document;
   root.addEventListener('click', async (e)=>{
+    const resolveBtn = e.target.closest('.btn-resolve-duplicate');
+    if (resolveBtn){
+      const itemId = resolveBtn.getAttribute('data-item-id') || '';
+      await openDuplicateResolver(itemId);
+      return;
+    }
     const btn = e.target.closest('.btn-split'); if (!btn) return;
     const txId = btn.getAttribute('data-tx-id') || '';
     const bankId = btn.getAttribute('data-bank-id') || '';
