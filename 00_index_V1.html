@@ -490,6 +490,8 @@
                 <th>Фонд</th>
                 <th>Сума</th>
                 <th>Опис</th>
+                <th>Коментар</th>
+                <th>Категорія</th>
                 <th>Дії</th>
               </tr>
             </thead>
@@ -760,23 +762,42 @@
     function renderOpsTable(model){
       // model: { meta:{page,size,total,pages}, items:[...] }
       OPS.tbody.innerHTML = '';
+      const escapeHtml = (value) => String(value == null ? '' : value)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+      const metaYear = Number(model && model.meta && model.meta.year) || CURRENT.year || (new Date()).getFullYear();
       (model.items || []).forEach(t=>{
         const tr = document.createElement('tr');
         const d = new Date(t.date);
         const txId = String(t.id || t.itemId || '').trim();
         const bankId = String(t.bankId || '').trim();
+        const itemYear = Number(t.year) || metaYear;
         const splitBtn = txId ? `<button class="btn btn--ghost btn-split" data-tx-id="${txId}"${bankId ? ` data-bank-id="${bankId}"` : ''}>Рознести</button>` : '';
+        const disableInline = !txId || !itemYear;
+        const commentValue = String(t.comment == null ? '' : t.comment);
+        const categoryValue = String(t.category == null ? '' : t.category);
+        const commentAttr = escapeHtml(commentValue);
+        const categoryAttr = escapeHtml(categoryValue);
         tr.innerHTML = `
           <td>${d.toLocaleDateString('uk-UA')}</td>
           <td>${t.fund || '—'}</td>
           <td>${fmtMoney(t.amount)}</td>
           <td>${t.details || ''}</td>
+          <td>
+            <input class="input ops-comment-input" type="text" value="${commentAttr}" data-item-id="${escapeHtml(txId)}" data-year="${escapeHtml(String(itemYear || ''))}" data-original-value="${commentAttr}" ${disableInline ? 'disabled' : ''} />
+          </td>
+          <td>
+            <input class="input ops-category-input" type="text" value="${categoryAttr}" data-item-id="${escapeHtml(txId)}" data-year="${escapeHtml(String(itemYear || ''))}" data-original-value="${categoryAttr}" ${disableInline ? 'disabled' : ''} />
+          </td>
           <td>${splitBtn}</td>`;
         OPS.tbody.appendChild(tr);
       });
       const m = model.meta || {page:1,pages:1,total:0,size:OPS.size};
       OPS.metaEl.textContent = `Сторінка ${m.page}/${m.pages} · Записів: ${m.total}`;
-      OPS.page = m.page; OPS.size = m.size;
+      OPS.page = m.page; OPS.size = m.size; OPS.year = metaYear;
     }
 
     function opsFetch(){
@@ -806,6 +827,97 @@
     function setupSplitActions(){
       const tableRoot = document.querySelector('.ops-table');
       if (!tableRoot) return;
+
+      async function saveCommentField(input){
+        if (!input || input.hasAttribute('disabled')) return;
+        const original = input.getAttribute('data-original-value') || '';
+        const current = input.value;
+        if (current === original) return;
+        const itemId = input.getAttribute('data-item-id') || '';
+        const yearStr = input.getAttribute('data-year') || '';
+        const year = Number(yearStr);
+        if (!itemId || !year){
+          input.value = original;
+          return;
+        }
+        if (!uiModal || typeof uiModal.confirm !== 'function' || typeof uiModal.alert !== 'function') return;
+        const confirmed = await uiModal.confirm('Зберегти новий коментар?', 'Коментар');
+        if (!confirmed){
+          input.value = original;
+          return;
+        }
+        const trimmed = current.trim();
+        if (!isAppsScript || !(google && google.script && google.script.run)){
+          input.value = trimmed;
+          input.setAttribute('data-original-value', trimmed);
+          await uiModal.alert('Збережено', 'Коментар');
+          return;
+        }
+        try {
+          await new Promise((resolve, reject) => {
+            google.script.run
+              .withFailureHandler(reject)
+              .withSuccessHandler(resolve)
+              .updateTransactionComment({ itemId, year, comment: trimmed });
+          });
+          input.value = trimmed;
+          input.setAttribute('data-original-value', trimmed);
+          await uiModal.alert('Збережено', 'Коментар');
+        } catch (err) {
+          console.error(err);
+          input.value = original;
+          const message = String(err && err.message || err || 'Помилка');
+          if (uiModal && typeof uiModal.alert === 'function') {
+            await uiModal.alert(message, 'Помилка');
+          }
+        }
+      }
+
+      async function saveCategoryField(input){
+        if (!input || input.hasAttribute('disabled')) return;
+        const original = input.getAttribute('data-original-value') || '';
+        const current = input.value;
+        if (current === original) return;
+        const itemId = input.getAttribute('data-item-id') || '';
+        const yearStr = input.getAttribute('data-year') || '';
+        const year = Number(yearStr);
+        if (!itemId || !year){
+          input.value = original;
+          return;
+        }
+        if (!uiModal || typeof uiModal.confirm !== 'function' || typeof uiModal.alert !== 'function') return;
+        const confirmed = await uiModal.confirm('Зберегти нову категорію?', 'Категорія');
+        if (!confirmed){
+          input.value = original;
+          return;
+        }
+        const trimmed = current.trim();
+        if (!isAppsScript || !(google && google.script && google.script.run)){
+          input.value = trimmed;
+          input.setAttribute('data-original-value', trimmed);
+          await uiModal.alert('Збережено', 'Категорія');
+          return;
+        }
+        try {
+          await new Promise((resolve, reject) => {
+            google.script.run
+              .withFailureHandler(reject)
+              .withSuccessHandler(resolve)
+              .updateTransactionCategory({ itemId, year, category: trimmed });
+          });
+          input.value = trimmed;
+          input.setAttribute('data-original-value', trimmed);
+          await uiModal.alert('Збережено', 'Категорія');
+        } catch (err) {
+          console.error(err);
+          input.value = original;
+          const message = String(err && err.message || err || 'Помилка');
+          if (uiModal && typeof uiModal.alert === 'function') {
+            await uiModal.alert(message, 'Помилка');
+          }
+        }
+      }
+
       tableRoot.addEventListener('click', async (event) => {
         const btn = event.target.closest('.btn-split');
         if (!btn) return;
@@ -1000,6 +1112,24 @@
           }
         }
       });
+
+      tableRoot.addEventListener('change', async (event) => {
+        const target = event.target;
+        if (!target || !target.classList) return;
+        if (target.classList.contains('ops-comment-input')) {
+          await saveCommentField(target);
+        } else if (target.classList.contains('ops-category-input')) {
+          await saveCategoryField(target);
+        }
+      });
+
+      tableRoot.addEventListener('blur', async (event) => {
+        const target = event.target;
+        if (!target || !target.classList) return;
+        if (target.classList.contains('ops-comment-input')) {
+          await saveCommentField(target);
+        }
+      }, true);
     }
 
     // ===== GLOBAL LOADER FUNCTIONS =====

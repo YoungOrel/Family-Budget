@@ -331,3 +331,49 @@ function txSaveSplitAllocation(args){
 
   return { ok:true };
 }
+
+/**
+ * UA: Оновити коментар транзакції у tx_YYYY.json + інвалідація кешу.
+ * EN: Update transaction comment.
+ * args: { itemId:string, year:number, comment:string }
+ */
+function updateTransactionComment(args){
+  args = args || {};
+  var itemId = String(args.itemId||'').trim();
+  var year = Number(args.year);
+  var comment = String(args.comment||'').trim();
+  if (!itemId || !year) throw new Error('Некоректні параметри');
+
+  var list = readJson('tx_' + year + '.json') || [];
+  var idx = list.findIndex(function(it){ return String(it.itemId||it.id||'') === itemId; });
+  if (idx < 0) throw new Error('Транзакцію не знайдено');
+
+  list[idx].comment = comment;
+  writeJson('tx_' + year + '.json', list);
+  if (typeof cacheInvalidate === 'function') { try { cacheInvalidate('tx:Y'+year); } catch(e){} }
+  return { ok:true };
+}
+
+/**
+ * UA: Оновити категорію транзакції (валідація проти довідника, якщо є).
+ * EN: Update transaction category.
+ * args: { itemId:string, year:number, category:string }
+ */
+function updateTransactionCategory(args){
+  args = args || {};
+  var itemId = String(args.itemId||'').trim();
+  var year = Number(args.year);
+  var category = String(args.category||'').trim();
+  if (!itemId || !year) throw new Error('Некоректні параметри');
+
+  // TODO: якщо у проекті є довідник категорій — перевір тут валідність category
+
+  var list = readJson('tx_' + year + '.json') || [];
+  var idx = list.findIndex(function(it){ return String(it.itemId||it.id||'') === itemId; });
+  if (idx < 0) throw new Error('Транзакцію не знайдено');
+
+  list[idx].category = category;
+  writeJson('tx_' + year + '.json', list);
+  if (typeof cacheInvalidate === 'function') { try { cacheInvalidate('tx:Y'+year); } catch(e){} }
+  return { ok:true };
+}
