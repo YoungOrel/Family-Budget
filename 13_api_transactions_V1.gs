@@ -182,7 +182,10 @@ function txBuildSplitPayload(args){
   var bankId = String(args.bankId||'').trim();
 
   // Визначити рік і запис
-  var candidates = _collectTxYears_ ? _collectTxYears_() : [new Date().getFullYear(), new Date().getFullYear()-1, new Date().getFullYear()+1];
+  var now = new Date();
+  var candidates = (typeof _collectTxYears_ === 'function')
+    ? _collectTxYears_()
+    : [now.getFullYear(), now.getFullYear()-1];
   var hit=null, hitYear=null, hitIdx=-1;
   candidates.forEach(function(y){
     if (hit) return;
@@ -210,7 +213,9 @@ function txBuildSplitPayload(args){
   var mainAmount=Number(main && (main.item.amount||0))||0;
 
   // Фонди (адаптуй під твій довідник, якщо є утиліта — використай її)
-  var funds=_loadUniqueFundsListFromModel_ ? _loadUniqueFundsListFromModel_() : [];
+  var funds = (typeof _loadUniqueFundsListFromModel_ === 'function')
+    ? _loadUniqueFundsListFromModel_()
+    : [];
 
   var items=group.map(function(g){
     return {

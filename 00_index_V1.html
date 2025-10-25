@@ -720,21 +720,30 @@
       });
     }
 
-    function loadDashboard(){
+    async function loadDashboard(){
         if (!CURRENT.year || !CURRENT.month) return;
-        
-        // ПОКАЗАТИ ЛОАДЕР ПРИ ЗАВАНТАЖЕННІ ДАНИХ
+
         showLoader(true);
-        
-        if (isAppsScript){
-            google.script.run.withSuccessHandler(model=>{
+        try {
+            if (isAppsScript){
+                const model = await new Promise((resolve, reject) => {
+                    google.script.run
+                        .withSuccessHandler(resolve)
+                        .withFailureHandler(reject)
+                        .getDashboard({ year: CURRENT.year, month: CURRENT.month });
+                });
                 renderDashboard(model);
-                // СХОВАТИ ЛОАДЕР
-                showLoader(false);
-            }).getDashboard({year: CURRENT.year, month: CURRENT.month});
-        } else {
-            renderDashboard(buildMock());
-            // СХОВАТИ ЛОАДЕР
+            } else {
+                renderDashboard(buildMock());
+            }
+        } catch (err) {
+            const message = String((err && err.message) || err || 'Помилка завантаження');
+            if (window.uiModal && typeof window.uiModal.alert === 'function'){
+                await window.uiModal.alert(message, 'Помилка');
+            } else if (typeof window.alert === 'function'){
+                window.alert(message);
+            }
+        } finally {
             showLoader(false);
         }
     }
@@ -878,11 +887,14 @@
 
         const actionsCell = document.createElement('td');
         actionsCell.textContent = '';
-        const itemId = item && (item.itemId ?? item.id ?? '');
+        const rawItemId = item && (item.itemId ?? null);
+        const rawId = item && (item.id ?? null);
+        const itemId = rawItemId ?? rawId ?? '';
         const splitBtn = document.createElement('button');
         splitBtn.className = 'btn btn--ghost btn-split';
         splitBtn.textContent = 'Рознести';
         splitBtn.setAttribute('data-tx-id', String(itemId || ''));
+        splitBtn.setAttribute('title', `itemId=${rawItemId ?? ''} id=${rawId ?? ''}`);
         actionsCell.appendChild(splitBtn);
         tr.appendChild(actionsCell);
 
@@ -941,7 +953,7 @@
       }
     }
 
-    function loadOperations(){
+    async function loadOperations(){
       ensureOpsDefaultPeriod();
       const filters = collectOpsFilters();
       const year = CURRENT.year || (new Date()).getFullYear();
@@ -954,45 +966,47 @@
         size: filters.size || 50
       };
       showOpsLoader();
-      if (isAppsScript){
-        google.script.run
-          .withSuccessHandler(function(res){
-            const meta = res && res.meta ? res.meta : null;
-            const items = (res && res.items) || res || [];
-            window.__opsLastItems = Array.isArray(items) ? items.slice() : [];
-            OPS_STATE.lastMeta = meta;
-            if (meta && typeof meta.page === 'number') {
-              OPS_STATE.page = meta.page;
-            }
-            renderOperations(items);
-            updateOpsPager(meta);
-            hideOpsLoader();
-          })
-          .withFailureHandler(function(err){
-            hideOpsLoader();
-            const message = String((err && err.message) || err || 'Помилка завантаження');
-            if (window.uiModal && typeof window.uiModal.alert === 'function'){
-              window.uiModal.alert(message, 'Помилка');
-            } else if (typeof window.alert === 'function'){
-              window.alert(message);
-            }
-          })
-          .getTransactionsView(params);
-      } else {
-        const mock = buildMock();
-        const mockItems = Array.isArray(mock && mock.recent) ? mock.recent.map(row => ({
-          date: row.date,
-          fund: row.fund,
-          category: row.category || '—',
-          amount: row.amount,
-          details: row.details || '',
-          comment: row.comment || ''
-        })) : [];
-        window.__opsLastItems = mockItems.slice();
-        OPS_STATE.lastMeta = { page: 1, pages: 1, total: mockItems.length, size: filters.size };
-        OPS_STATE.page = OPS_STATE.lastMeta.page;
-        renderOperations(mockItems);
-        updateOpsPager(OPS_STATE.lastMeta);
+      try {
+        if (isAppsScript){
+          const res = await new Promise((resolve, reject) => {
+            google.script.run
+              .withSuccessHandler(resolve)
+              .withFailureHandler(reject)
+              .getTransactionsView(params);
+          });
+          const meta = res && res.meta ? res.meta : null;
+          const items = (res && res.items) || res || [];
+          window.__opsLastItems = Array.isArray(items) ? items.slice() : [];
+          OPS_STATE.lastMeta = meta;
+          if (meta && typeof meta.page === 'number') {
+            OPS_STATE.page = meta.page;
+          }
+          renderOperations(items);
+          updateOpsPager(meta);
+        } else {
+          const mock = buildMock();
+          const mockItems = Array.isArray(mock && mock.recent) ? mock.recent.map(row => ({
+            date: row.date,
+            fund: row.fund,
+            category: row.category || '—',
+            amount: row.amount,
+            details: row.details || '',
+            comment: row.comment || ''
+          })) : [];
+          window.__opsLastItems = mockItems.slice();
+          OPS_STATE.lastMeta = { page: 1, pages: 1, total: mockItems.length, size: filters.size };
+          OPS_STATE.page = OPS_STATE.lastMeta.page;
+          renderOperations(mockItems);
+          updateOpsPager(OPS_STATE.lastMeta);
+        }
+      } catch (err) {
+        const message = String((err && err.message) || err || 'Помилка завантаження');
+        if (window.uiModal && typeof window.uiModal.alert === 'function'){
+          await window.uiModal.alert(message, 'Помилка');
+        } else if (typeof window.alert === 'function'){
+          window.alert(message);
+        }
+      } finally {
         hideOpsLoader();
       }
     }
@@ -1018,63 +1032,106 @@
       }
     }
 
-    function init(){
+    async function init(){
       showLoader(true);
-
-      if (isAppsScript){
-        google.script.run.withSuccessHandler(boot => {
+      try {
+        if (isAppsScript){
+          const boot = await new Promise((resolve, reject) => {
+            google.script.run
+              .withSuccessHandler(resolve)
+              .withFailureHandler(reject)
+              .getBootstrap();
+          });
           BOOT = boot;
-          CURRENT.year = boot.settings.activeYear;
-          google.script.run.withSuccessHandler(model => {
-            const months = Array.isArray(model.months) ? model.months : [];
-            fillMonths(CURRENT.year, months);
-            CURRENT.month = months.length ? months[months.length - 1] : null;
-            if (CURRENT.month){
-              UI.month.value = CURRENT.month;
-            }
-            UI.month.addEventListener('change', (e) => {
-              CURRENT.month = e.target.value;
-              loadDashboard();
-            });
-            document.getElementById('btn-rebuild').addEventListener('click', () => {
+          CURRENT.year = boot && boot.settings ? boot.settings.activeYear : CURRENT.year;
+
+          const model = await new Promise((resolve, reject) => {
+            google.script.run
+              .withSuccessHandler(resolve)
+              .withFailureHandler(reject)
+              .getDashboard({ year: CURRENT.year, month: null });
+          });
+
+          const months = Array.isArray(model.months) ? model.months : [];
+          fillMonths(CURRENT.year, months);
+          CURRENT.month = months.length ? months[months.length - 1] : null;
+          if (CURRENT.month){
+            UI.month.value = CURRENT.month;
+          }
+          UI.month.addEventListener('change', (e) => {
+            CURRENT.month = e.target.value;
+            loadDashboard();
+          });
+
+          const rebuildBtn = document.getElementById('btn-rebuild');
+          if (rebuildBtn){
+            rebuildBtn.addEventListener('click', async () => {
               if (!CURRENT.year || !CURRENT.month) return;
-              google.script.run.withSuccessHandler(renderDashboard)
-                .rebuildDashboard({ year: CURRENT.year, month: CURRENT.month });
+              showLoader(true);
+              try {
+                const refreshed = await new Promise((resolve, reject) => {
+                  google.script.run
+                    .withSuccessHandler(resolve)
+                    .withFailureHandler(reject)
+                    .rebuildDashboard({ year: CURRENT.year, month: CURRENT.month });
+                });
+                renderDashboard(refreshed);
+              } catch (err) {
+                const message = String((err && err.message) || err || 'Помилка оновлення');
+                if (window.uiModal && typeof window.uiModal.alert === 'function'){
+                  await window.uiModal.alert(message, 'Помилка');
+                } else if (typeof window.alert === 'function'){
+                  window.alert(message);
+                }
+              } finally {
+                showLoader(false);
+              }
             });
-            UI.year.addEventListener('change',  (e) => {
-              CURRENT.year = Number(e.target.value);
-              loadDashboard();
+          }
+
+          UI.year.addEventListener('change',  (e) => {
+            CURRENT.year = Number(e.target.value);
+            loadDashboard();
+          });
+
+          const opsFunds = [];
+          if (BOOT && Array.isArray(BOOT.funds)){
+            opsFunds.push(...BOOT.funds);
+          }
+          if (Array.isArray(model?.items)){
+            model.items.forEach(row => { if (row && row.fund) opsFunds.push(row.fund); });
+          }
+          populateOpsFunds(opsFunds);
+          ensureOpsDefaultPeriod();
+
+          renderDashboard(model);
+        } else {
+          const mock = buildMock();
+          CURRENT.year = 2025;
+          CURRENT.month = mock.monthKey;
+          fillMonths(CURRENT.year, [mock.monthKey]);
+          UI.month.addEventListener('change', (e) => {
+            CURRENT.month = e.target.value;
+            loadDashboard();
+          });
+          const rebuildBtn = document.getElementById('btn-rebuild');
+          if (rebuildBtn){
+            rebuildBtn.addEventListener('click', () => {
+              renderDashboard(buildMock());
             });
-
-            const opsFunds = [];
-            if (BOOT && Array.isArray(BOOT.funds)){
-              opsFunds.push(...BOOT.funds);
-            }
-            if (Array.isArray(model?.items)){
-              model.items.forEach(row => { if (row && row.fund) opsFunds.push(row.fund); });
-            }
-            populateOpsFunds(opsFunds);
-            ensureOpsDefaultPeriod();
-
-            renderDashboard(model);
-            showLoader(false);
-          }).getDashboard({year: CURRENT.year, month: null});
-        }).getBootstrap();
-      } else {
-        const mock = buildMock();
-        CURRENT.year = 2025;
-        CURRENT.month = mock.monthKey;
-        fillMonths(CURRENT.year, [mock.monthKey]);
-        UI.month.addEventListener('change', (e) => {
-          CURRENT.month = e.target.value;
-          loadDashboard();
-        });
-        document.getElementById('btn-rebuild').addEventListener('click', () => {
-          renderDashboard(buildMock());
-        });
-        populateOpsFunds((mock.items || []).map(row => row.fund).filter(Boolean));
-        ensureOpsDefaultPeriod();
-        renderDashboard(mock);
+          }
+          populateOpsFunds((mock.items || []).map(row => row.fund).filter(Boolean));
+          ensureOpsDefaultPeriod();
+          renderDashboard(mock);
+        }
+      } catch (err) {
+        const message = String((err && err.message) || err || 'Помилка завантаження');
+        if (window.uiModal && typeof window.uiModal.alert === 'function'){
+          await window.uiModal.alert(message, 'Помилка');
+        } else if (typeof window.alert === 'function'){
+          window.alert(message);
+        }
+      } finally {
         showLoader(false);
       }
     }
@@ -1128,71 +1185,106 @@
   root.addEventListener('click', async (e)=>{
     const btn = e.target.closest('.btn-split'); if(!btn) return;
     const txId = btn.getAttribute('data-tx-id');
-    try {
-      showOpsLoader();
-      const payload = await new Promise(res => google.script.run.withSuccessHandler(res).txBuildSplitPayload({ txId }));
-      hideOpsLoader();
-
-      // Крок 1: повідомлення та підтвердження
-      await uiModal.alert('Дані для рознесення завантажено.', 'Рознесення');
-      const ok = await uiModal.confirm('Відкрити редактор рознесення для цієї операції?', 'Рознесення');
-      if(!ok) return;
-
-      // Крок 2: простий редактор частин
-      const base = payload.mainAmount || 0;
-      const formId = 'split-form-' + Date.now();
-      const tpl = (rows)=>`
-        <div id="${formId}">
-          <p>Початкова сума: <b>${base}</b></p>
-          <div id="split-rows" style="display:flex;flex-direction:column;gap:8px"></div>
-          <button class="btn" id="add-part">+ Додати рядок</button>
-        </div>`;
-      const container = document.createElement('div');
-      container.innerHTML = tpl(payload.items.filter(x=>x.isSplitPart));
-      const host = container.querySelector('#split-rows');
-
-      function addRow(part){
-        const div=document.createElement('div');
-        div.className='split-row';
-        div.innerHTML=`
-          <input class="input fund" placeholder="Фонд" value="${part?.fund||''}" style="width:26%">
-          <input class="input amt" type="number" step="0.01" placeholder="Сума" value="${part?.amount||''}" style="width:18%">
-          <input class="input det" placeholder="Деталі" value="${part?.details||''}" style="width:46%">
-          <button class="btn btn--ghost rm" title="Видалити">&times;</button>`;
-        host.appendChild(div);
-        div.querySelector('.rm').onclick=()=>div.remove();
+    if (!txId) {
+      if (window.uiModal && typeof window.uiModal.alert === 'function'){
+        await window.uiModal.alert('Не знайдено ідентифікатор транзакції для рознесення.', 'Помилка');
+      } else if (typeof window.alert === 'function'){
+        window.alert('Не знайдено ідентифікатор транзакції для рознесення.');
       }
-      (payload.items||[]).filter(x=>x.isSplitPart).forEach(addRow);
-      container.querySelector('#add-part').onclick=()=>addRow({});
+      return;
+    }
 
-      const confirmed = await uiModal.confirm(container.innerHTML, 'Рознесення');
-      if(!confirmed) return;
-
-      // Крок 3: збір та валідація
-      const rows = Array.from(document.querySelectorAll('.split-row'));
-      const parts = rows.map(r=>({
-        fund: r.querySelector('.fund')?.value.trim(),
-        amount: Number(r.querySelector('.amt')?.value),
-        details: r.querySelector('.det')?.value.trim()
-      }));
-      const sum = parts.reduce((s,p)=>s+(Number(p.amount)||0),0);
-      if (sum > base){ await uiModal.alert('Сума частин перевищує початкову. Виправте.', 'Помилка'); return; }
-
-      // Крок 4: запис
-      showOpsLoader();
-      const res = await new Promise(res => google.script.run.withSuccessHandler(res).txSaveSplitAllocation({
-        bankId: payload.bankId, year: payload.year, mainItem: payload.mainItem, items: parts, indexMap: payload.indexMap
-      }));
+    let payload;
+    showOpsLoader();
+    try {
+      payload = await new Promise((resolve, reject) => {
+        google.script.run
+          .withSuccessHandler(resolve)
+          .withFailureHandler(reject)
+          .txBuildSplitPayload({ txId });
+      });
+    } catch (err) {
+      const message = String((err && err.message) || err) || 'Помилка завантаження';
+      if (window.uiModal && typeof window.uiModal.alert === 'function'){
+        await window.uiModal.alert(message, 'Помилка');
+      } else if (typeof window.alert === 'function'){
+        window.alert(message);
+      }
+      return;
+    } finally {
       hideOpsLoader();
+    }
+
+    // Крок 1: повідомлення та підтвердження
+    await uiModal.alert('Дані для рознесення завантажено.', 'Рознесення');
+    const ok = await uiModal.confirm('Відкрити редактор рознесення для цієї операції?', 'Рознесення');
+    if(!ok) return;
+
+    // Крок 2: простий редактор частин
+    const base = payload.mainAmount || 0;
+    const formId = 'split-form-' + Date.now();
+    const tpl = (rows)=>`
+      <div id="${formId}">
+        <p>Початкова сума: <b>${base}</b></p>
+        <div id="split-rows" style="display:flex;flex-direction:column;gap:8px"></div>
+        <button class="btn" id="add-part">+ Додати рядок</button>
+      </div>`;
+    const container = document.createElement('div');
+    container.innerHTML = tpl(payload.items.filter(x=>x.isSplitPart));
+    const host = container.querySelector('#split-rows');
+
+    function addRow(part){
+      const div=document.createElement('div');
+      div.className='split-row';
+      div.innerHTML=`
+        <input class="input fund" placeholder="Фонд" value="${part?.fund||''}" style="width:26%">
+        <input class="input amt" type="number" step="0.01" placeholder="Сума" value="${part?.amount||''}" style="width:18%">
+        <input class="input det" placeholder="Деталі" value="${part?.details||''}" style="width:46%">
+        <button class="btn btn--ghost rm" title="Видалити">&times;</button>`;
+      host.appendChild(div);
+      div.querySelector('.rm').onclick=()=>div.remove();
+    }
+    (payload.items||[]).filter(x=>x.isSplitPart).forEach(addRow);
+    container.querySelector('#add-part').onclick=()=>addRow({});
+
+    const confirmed = await uiModal.confirm(container.innerHTML, 'Рознесення');
+    if(!confirmed) return;
+
+    // Крок 3: збір та валідація
+    const rows = Array.from(document.querySelectorAll('.split-row'));
+    const parts = rows.map(r=>({
+      fund: r.querySelector('.fund')?.value.trim(),
+      amount: Number(r.querySelector('.amt')?.value),
+      details: r.querySelector('.det')?.value.trim()
+    }));
+    const sum = parts.reduce((s,p)=>s+(Number(p.amount)||0),0);
+    if (sum > base){ await uiModal.alert('Сума частин перевищує початкову. Виправте.', 'Помилка'); return; }
+
+    // Крок 4: запис
+    showOpsLoader();
+    try {
+      const res = await new Promise((resolve, reject) => {
+        google.script.run
+          .withSuccessHandler(resolve)
+          .withFailureHandler(reject)
+          .txSaveSplitAllocation({
+            bankId: payload.bankId, year: payload.year, mainItem: payload.mainItem, items: parts, indexMap: payload.indexMap
+          });
+      });
       if (res && res.ok){
         await uiModal.alert('Рознесення збережено', 'Готово');
         // перезавантажити поточну сторінку таблиці
         if (typeof loadOperations === 'function') loadOperations();
       }
-    } catch(err){
+    } catch (err) {
+      const message = String((err && err.message) || err) || 'Сталася помилка';
+      if (window.uiModal && typeof window.uiModal.alert === 'function'){
+        await window.uiModal.alert(message, 'Помилка');
+      } else if (typeof window.alert === 'function'){
+        window.alert(message);
+      }
+    } finally {
       hideOpsLoader();
-      console.error(err);
-      await uiModal.alert(String(err && err.message || err) || 'Сталася помилка', 'Помилка');
     }
   });
 })();
