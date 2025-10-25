@@ -853,7 +853,17 @@
         });
       }
       body.innerHTML = '';
-      (Array.isArray(items) ? items : []).forEach(item => {
+      const list = Array.isArray(items) ? items : [];
+      // DEBUG: показати, якщо відсутні ідентифікатори
+      (list || []).forEach(it => {
+        if (!it.itemId && !it.id && !it.txId) {
+          console.warn('Row without tx-id keys', it);
+        }
+        if (!it.bankId && !it.id && !it.groupId) {
+          console.warn('Row without bank-id keys', it);
+        }
+      });
+      list.forEach(item => {
         const tr = document.createElement('tr');
 
         const dateCell = document.createElement('td');
@@ -887,14 +897,17 @@
 
         const actionsCell = document.createElement('td');
         actionsCell.textContent = '';
-        const rawItemId = item && (item.itemId ?? null);
-        const rawId = item && (item.id ?? null);
-        const itemId = rawItemId ?? rawId ?? '';
+        const rawItemId = item && (item.itemId ?? '');
+        const rawId = item && (item.id ?? '');
+        const rawBankId = item && (item.bankId ?? '');
+        const txId = item ? (item.itemId || item.id || item.txId || '') : '';
+        const bankId = item ? (item.bankId || item.id || item.groupId || '') : '';
         const splitBtn = document.createElement('button');
         splitBtn.className = 'btn btn--ghost btn-split';
         splitBtn.textContent = 'Рознести';
-        splitBtn.setAttribute('data-tx-id', String(itemId || ''));
-        splitBtn.setAttribute('title', `itemId=${rawItemId ?? ''} id=${rawId ?? ''}`);
+        splitBtn.setAttribute('data-tx-id', String(txId || ''));
+        splitBtn.setAttribute('data-bank-id', String(bankId || ''));
+        splitBtn.setAttribute('title', `itemId=${rawItemId}; id=${rawId}; bankId=${rawBankId}`);
         actionsCell.appendChild(splitBtn);
         tr.appendChild(actionsCell);
 
@@ -1183,14 +1196,12 @@
 (function setupSplitActions(){
   const root = document.querySelector('.ops-table') || document;
   root.addEventListener('click', async (e)=>{
-    const btn = e.target.closest('.btn-split'); if(!btn) return;
-    const txId = btn.getAttribute('data-tx-id');
-    if (!txId) {
-      if (window.uiModal && typeof window.uiModal.alert === 'function'){
-        await window.uiModal.alert('Не знайдено ідентифікатор транзакції для рознесення.', 'Помилка');
-      } else if (typeof window.alert === 'function'){
-        window.alert('Не знайдено ідентифікатор транзакції для рознесення.');
-      }
+    const btn = e.target.closest('.btn-split'); if (!btn) return;
+    const txId = btn.getAttribute('data-tx-id') || '';
+    const bankId = btn.getAttribute('data-bank-id') || '';
+
+    if (!txId && !bankId) {
+      await uiModal.alert('Не знайдено ідентифікатор транзакції (itemId/bankId) для рознесення.', 'Помилка');
       return;
     }
 
@@ -1201,15 +1212,10 @@
         google.script.run
           .withSuccessHandler(resolve)
           .withFailureHandler(reject)
-          .txBuildSplitPayload({ txId });
+          .txBuildSplitPayload({ txId: txId || null, bankId: bankId || null });
       });
     } catch (err) {
-      const message = String((err && err.message) || err) || 'Помилка завантаження';
-      if (window.uiModal && typeof window.uiModal.alert === 'function'){
-        await window.uiModal.alert(message, 'Помилка');
-      } else if (typeof window.alert === 'function'){
-        window.alert(message);
-      }
+      await uiModal.alert(String((err && err.message) || err) || 'Помилка завантаження', 'Помилка');
       return;
     } finally {
       hideOpsLoader();
