@@ -1,8 +1,24 @@
 function getBootstrap() {
   const u = getUserSettings();
+  const fundsDict = (_loadUniqueFundsListFromModel_() || []).map(x => x && (x.value || x.label || x)).filter(Boolean);
+  const accountsDict = _txCollectKnownAccounts_();
+  const categoriesDict = _txCollectKnownCategories_();
+  const monoToken = (typeof _monoGetToken_ === 'function') ? _monoGetToken_() : '';
+  const monoEnabledProp = PropertiesService.getScriptProperties().getProperty(MONO_PROP_ENABLED);
+  const monoEnabled = String(monoEnabledProp || 'true').toLowerCase() !== 'false';
   return {
-    settings: { activeYear: u.activeYear, cacheDashboard: u.cacheDashboard },
-    funds: [], accounts: []
+    settings: {
+      activeYear: u.activeYear,
+      cacheDashboard: u.cacheDashboard,
+      platform: (typeof getPlatformInfo === 'function') ? getPlatformInfo('') : { device: 'desktop', ua: '' },
+      monobank: {
+        enabled: monoEnabled,
+        hasToken: !!monoToken
+      }
+    },
+    funds: fundsDict,
+    accounts: accountsDict,
+    categories: categoriesDict
   };
 }
 

@@ -57,12 +57,18 @@ function _computeDashboardInternal({ year, monthKey, plannedMonths }) {
     const d = new Date(t.date);
     return d >= start && d < end;
   });
+  const txReportable = txItems.filter(t => {
+    if (typeof txIsReportable === 'function') return txIsReportable(t);
+    return !(t && (t.isInternal || t.internalType === 'duplicate' || t.duplicateOf));
+  });
   const spentByFund = {};
   const recent = [];
   txItems.forEach(t => {
     if (t.amount < 0) {
       const f = t.fund || '—';
-      spentByFund[f] = (spentByFund[f] || 0) + Math.abs(Number(t.amount));
+      if (txReportable.includes(t)) {
+        spentByFund[f] = (spentByFund[f] || 0) + Math.abs(Number(t.amount));
+      }
     }
     recent.push({ date: t.date, fund: t.fund, amount: t.amount, details: t.details });
   });
@@ -133,6 +139,9 @@ function _computeDashboardInternal({ year, monthKey, plannedMonths }) {
     const prevTxItems = (prevTx?.items || []).filter(t => {
       const d = new Date(t.date);
       return d >= prevStart && d <= prevCut;
+    }).filter(t => {
+      if (typeof txIsReportable === 'function') return txIsReportable(t);
+      return !(t && (t.isInternal || t.internalType === 'duplicate' || t.duplicateOf));
     });
     const prevSpent = prevTxItems.reduce((s, t) => s + (t.amount < 0 ? Math.abs(Number(t.amount)) : 0), 0);
     mom.spent = spentTotal - prevSpent;
