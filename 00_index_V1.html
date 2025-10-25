@@ -878,6 +878,12 @@
 
         const actionsCell = document.createElement('td');
         actionsCell.textContent = '';
+        const itemId = item && (item.itemId ?? item.id ?? '');
+        const splitBtn = document.createElement('button');
+        splitBtn.className = 'btn btn--ghost btn-split';
+        splitBtn.textContent = 'Рознести';
+        splitBtn.setAttribute('data-tx-id', String(itemId || ''));
+        actionsCell.appendChild(splitBtn);
         tr.appendChild(actionsCell);
 
         body.appendChild(tr);
@@ -1115,6 +1121,81 @@
     setupOperationsUi();
     showTab('dashboard');
     init();
+</script>
+<script>
+(function setupSplitActions(){
+  const root = document.querySelector('.ops-table') || document;
+  root.addEventListener('click', async (e)=>{
+    const btn = e.target.closest('.btn-split'); if(!btn) return;
+    const txId = btn.getAttribute('data-tx-id');
+    try {
+      showOpsLoader();
+      const payload = await new Promise(res => google.script.run.withSuccessHandler(res).txBuildSplitPayload({ txId }));
+      hideOpsLoader();
+
+      // Крок 1: повідомлення та підтвердження
+      await uiModal.alert('Дані для рознесення завантажено.', 'Рознесення');
+      const ok = await uiModal.confirm('Відкрити редактор рознесення для цієї операції?', 'Рознесення');
+      if(!ok) return;
+
+      // Крок 2: простий редактор частин
+      const base = payload.mainAmount || 0;
+      const formId = 'split-form-' + Date.now();
+      const tpl = (rows)=>`
+        <div id="${formId}">
+          <p>Початкова сума: <b>${base}</b></p>
+          <div id="split-rows" style="display:flex;flex-direction:column;gap:8px"></div>
+          <button class="btn" id="add-part">+ Додати рядок</button>
+        </div>`;
+      const container = document.createElement('div');
+      container.innerHTML = tpl(payload.items.filter(x=>x.isSplitPart));
+      const host = container.querySelector('#split-rows');
+
+      function addRow(part){
+        const div=document.createElement('div');
+        div.className='split-row';
+        div.innerHTML=`
+          <input class="input fund" placeholder="Фонд" value="${part?.fund||''}" style="width:26%">
+          <input class="input amt" type="number" step="0.01" placeholder="Сума" value="${part?.amount||''}" style="width:18%">
+          <input class="input det" placeholder="Деталі" value="${part?.details||''}" style="width:46%">
+          <button class="btn btn--ghost rm" title="Видалити">&times;</button>`;
+        host.appendChild(div);
+        div.querySelector('.rm').onclick=()=>div.remove();
+      }
+      (payload.items||[]).filter(x=>x.isSplitPart).forEach(addRow);
+      container.querySelector('#add-part').onclick=()=>addRow({});
+
+      const confirmed = await uiModal.confirm(container.innerHTML, 'Рознесення');
+      if(!confirmed) return;
+
+      // Крок 3: збір та валідація
+      const rows = Array.from(document.querySelectorAll('.split-row'));
+      const parts = rows.map(r=>({
+        fund: r.querySelector('.fund')?.value.trim(),
+        amount: Number(r.querySelector('.amt')?.value),
+        details: r.querySelector('.det')?.value.trim()
+      }));
+      const sum = parts.reduce((s,p)=>s+(Number(p.amount)||0),0);
+      if (sum > base){ await uiModal.alert('Сума частин перевищує початкову. Виправте.', 'Помилка'); return; }
+
+      // Крок 4: запис
+      showOpsLoader();
+      const res = await new Promise(res => google.script.run.withSuccessHandler(res).txSaveSplitAllocation({
+        bankId: payload.bankId, year: payload.year, mainItem: payload.mainItem, items: parts, indexMap: payload.indexMap
+      }));
+      hideOpsLoader();
+      if (res && res.ok){
+        await uiModal.alert('Рознесення збережено', 'Готово');
+        // перезавантажити поточну сторінку таблиці
+        if (typeof loadOperations === 'function') loadOperations();
+      }
+    } catch(err){
+      hideOpsLoader();
+      console.error(err);
+      await uiModal.alert(String(err && err.message || err) || 'Сталася помилка', 'Помилка');
+    }
+  });
+})();
 </script>
 <script>
 // === uiModal: alert / confirm / prompt (cautious) =========================
