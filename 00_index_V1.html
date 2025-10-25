@@ -1,0 +1,947 @@
+<!doctype html>
+<html lang="uk">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Домашній бюджет — Дашборд</title>
+  <style>
+    /* =====================
+       THEME & TOKENS
+       ===================== */
+    :root{
+      /* Yellow scale */
+      --y-50:  #fefce8;
+      --y-100: #fef9c2;
+      --y-200: #fff085;
+      --y-300: #ffdf20;
+      --y-400: #fdc700;
+      --y-500: #f0b100;
+      --y-600: #d08700;
+      --y-700: #a65f00;
+      --y-800: #894b00;
+      --y-900: #733e0a;
+      --y-950: #432004;
+
+      --bg: #0b0b0b;
+      --card: #101214;
+      --card-soft: #0d0f12;
+      --text: #ffffff;
+      --muted: #b7bdc6;
+      --ok: #26d07c;
+      --warn: var(--y-400);
+      --danger: #ff5a5f;
+
+      --outline: rgba(255,255,255,0.06);
+      --shadow: 0 8px 24px rgba(0,0,0,0.35);
+
+      /* Розміри та радіуси з пропорціями */
+      --gap: 16px;
+      --radius-xl: 20px;
+      --radius-lg: 16px;
+      --radius-md: 12px;
+      --radius-sm: 10px;
+      --radius-xs: 8px;   /* дрібні бейджі/лейбли */
+    }
+
+    /* Font: Century Gothic fallback stack */
+    @font-face{font-family:"CenturyGothicLocal"; src: local("Century Gothic"), local("CenturyGothic"); font-weight:400; font-style:normal;}
+    @font-face{font-family:"CenturyGothicLocal"; src: local("Century Gothic Bold"), local("CenturyGothic-Bold"); font-weight:700; font-style:bold;}
+
+    html,body{height:100%;}
+    body{
+      margin:0; background:var(--bg); color:var(--text);
+      font-family: CenturyGothicLocal, "Century Gothic", system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+      letter-spacing: 0.1px;
+    }
+
+    /* ====== Top Nav ====== */
+    .topbar{
+      position: sticky; top:0; z-index:10;
+      display:flex; align-items:center; gap:12px;
+      padding:12px 16px; background:linear-gradient(180deg, rgba(0,0,0,0.75), rgba(0,0,0,0.35));
+      border-bottom:1px solid var(--outline);
+      backdrop-filter: blur(8px);
+    }
+    .brand{ display:flex; align-items:center; gap:10px; font-weight:700; }
+    .brand-badge{ width:34px; height:34px; border-radius:10px; background:var(--y-400); display:grid; place-items:center; color:#000; font-weight:700; }
+    .menu{ display:flex; gap:8px; margin-left:8px; flex-wrap: wrap; }
+    .tab{ padding:8px 12px; border:1px solid var(--outline); border-radius:12px; cursor:pointer; user-select:none; }
+    .tab[aria-current="page"]{ background:var(--card); }
+
+    .spacer{ flex:1; }
+
+    .toolbar{ display:flex; gap:8px; align-items:center; }
+    .btn{ padding:9px 14px; border-radius:12px; border:1px solid var(--outline); background:var(--card); color:var(--text); cursor:pointer; box-shadow: var(--shadow); }
+    .btn--primary{ background: var(--y-500); color:#111; border-color: transparent; }
+    .btn--ghost{ background: transparent; border-color: var(--outline); }
+
+    /* ====== Page Head ====== */
+    .page{ max-width: 1280px; margin: 0 auto; padding: 16px; }
+    .head{
+      display:flex; gap:12px; align-items:flex-end; justify-content:space-between; flex-wrap:wrap; margin-top:8px;
+    }
+    .title h1{ margin:0; font-size:28px; font-weight:700; }
+    .title p{ margin:2px 0 0; color:var(--muted); }
+    .filters{ display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
+    .chip{ display:flex; gap:8px; align-items:center; padding:8px 12px; border-radius:12px; background: var(--card); border:1px solid var(--outline); }
+    select, .input{
+      background: var(--card-soft); color: var(--text);
+      border:1px solid var(--outline); border-radius:10px; padding:8px 10px; outline:none;
+      font-family: inherit; font-size: 14px;
+    }
+
+    /* Уніфікуємо шрифт і для інших елементів вводу */
+    input, button, select, textarea { font-family: inherit; }
+    option { font-family: inherit; }
+
+    /* ====== Content Layout ====== */
+    .grid{ display:grid; gap: var(--gap); grid-template-columns: repeat(12, 1fr); margin-top: 16px; }
+    .col-4{ grid-column: span 4; }
+    .col-8{ grid-column: span 8; }
+    .col-12{ grid-column: 1 / -1; }
+
+    /* ====== Cards ====== */
+    .card{
+      background: var(--card); border: 1px solid var(--outline); border-radius: var(--radius-xl);
+      padding: 16px; box-shadow: var(--shadow);
+    }
+    .card.soft{ background: linear-gradient(180deg, rgba(253, 199, 0, 0.08), transparent); }
+    .card h3{ margin: 0 0 12px; font-size: 16px; color: var(--muted); font-weight:600; }
+
+    /* ====== KPI GRID: 1 великий + 4 компактні ====== */
+    .kpis{
+      display:grid; gap: var(--gap);
+      grid-template-columns: 1fr; /* мобільно */
+    }
+    @media (min-width: 1200px){
+      .kpis{ grid-template-columns: repeat(12, 1fr); }
+      .span-4{ grid-column: span 4; }
+      .span-2{ grid-column: span 2; }
+    }
+    .kpi{ display:flex; flex-direction:column; justify-content:flex-start; padding:14px 16px;
+          background: var(--card); border:1px solid var(--outline); border-radius: var(--radius-xl); box-shadow: var(--shadow); }
+    .kpi--yellow{ background: var(--y-400); color:#111; border-color: transparent; }
+    .kpi__label{ font-size:12px; line-height:1.2; color: var(--muted); }
+    .kpi--yellow .kpi__label{ color:#1a1a1a; opacity: .85; }
+    .kpi__value{ font-weight:700; font-size: clamp(18px, 2.0vw, 22px); line-height:1.1; margin-top:4px; }
+    .kpi__delta{ margin-top:6px; font-size:12px; display:inline-flex; gap:8px; align-items:center; }
+    .kpi__pct{
+      margin-top:6px; font-size:12px;
+      color: var(--muted);
+    }
+    .kpi__spacer{ flex: 1 1 auto; }   /* штовхає все нижче до низу */
+    .kpi__pct{ margin-top:6px; font-size:12px; color: var(--muted); }
+    .kpi__pct--up{ color: var(--ok); }
+    .kpi__pct--down{ color: var(--danger); }
+
+    /* Спарклайни */
+    .spark{ height:26px; display:flex; color: #1a1a1a; align-items:flex-end; gap:4px; margin-top:6px; }
+    .bar{ width:6px; border-radius:8px; background: rgba(255,255,255,.22); }
+    .kpi--yellow .bar{ background: rgba(0,0,0,.2); }
+
+    /* Δ бейджі: пропорційне заокруглення, не «капсули» */
+    .delta{ display:inline-flex; align-items:center; gap:6px; padding:4px 8px; border-radius: var(--radius-xs);
+            border:1px solid var(--outline); background:var(--card-soft); }
+    .delta--up{ color: var(--ok); }
+    .delta--down{ color: var(--danger); }
+    .delta i{ font-style: normal; }
+    /* Видимість секцій */
+    .hidden{ display:none !important; }
+
+    /* Локальний лоадер поверх блоку */
+    .block-loader{
+      position:absolute; inset:0;
+      background: rgba(0,0,0,0.35);
+      backdrop-filter: blur(1px);
+      display:none; align-items:center; justify-content:center;
+      border-radius: var(--radius-xl);
+      z-index: 2;
+    }
+    .block-loader[aria-hidden="false"]{ display:flex; }
+    .spinner{
+      width:28px; height:28px; border-radius:50%;
+      border:3px solid rgba(255,255,255,0.25);
+      border-top-color: var(--y-400);
+      animation: spin 0.9s linear infinite;
+    }
+    @keyframes spin{ to{ transform: rotate(360deg); } }
+
+    /* ====== Risk List ====== */
+    .risk-list{ display:grid; gap:10px; }
+    .risk-item{ display:flex; align-items:center; gap:12px; padding:12px; border-radius: var(--radius-lg);
+                background:var(--card-soft); border:1px solid var(--outline); }
+    .risk-rank{ width:28px; height:28px; border-radius: var(--radius-md); background: var(--y-400); color:#111;
+                display:grid; place-items:center; font-weight:700; }
+    .risk-name{ font-weight:700; }
+    .risk-metrics{ margin-left:auto; display:flex; gap:10px; align-items:center; }
+    .badge{ padding:4px 8px; border-radius: var(--radius-xs); font-size:12px; border:1px solid var(--outline); background:var(--card); }
+    .badge--danger{ background: rgba(255,90,95,.15); color:#ffb3b6; border-color: transparent; }
+    .badge--warn{ background: rgba(253, 199, 0, .18); color: var(--y-300); border-color: transparent; }
+    .badge--ok{ background: rgba(38,208,124,.15); color:#8de0b7; border-color: transparent; }
+
+    /* ====== Table ====== */
+    table{ width:100%; border-collapse: collapse; }
+    th, td{ padding:10px 8px; border-bottom:1px solid var(--outline); text-align:left; }
+    th{ color: var(--muted); font-weight:600; font-size:13px; }
+    .progress{
+      width: 100%; height:10px; background: rgba(255,255,255,0.06); border-radius: var(--radius-lg); overflow:hidden;
+    }
+    .progress > i{ display:block; height:100%; background: linear-gradient(90deg, var(--y-400), var(--y-700)); }
+    /* відсотки в таблиці — «тихий» рядок під сумою */
+    .sub{ margin-top:2px; font-size:12px; color: var(--muted); }
+    .pct-badge{ display:inline-block; padding:2px 6px; border-radius: var(--radius-xs);
+                border:1px solid var(--outline); background: var(--card-soft); margin-right:6px; }
+
+    /* ====== Helpers ====== */
+    .pill{ display:inline-flex; align-items:center; gap:8px; padding:6px 10px; background: var(--y-100); color:#111; border-radius: var(--radius-md); font-weight:600; }
+    .muted{ color: var(--muted); }
+    /* ФІКС ДЛЯ СПЕЙСЕРА */
+    .kpi {
+      min-height: 140px;
+    }
+
+    /* ====== GLOBAL LOADER ====== */
+    .global-loader {
+        position: fixed;
+        inset: 0;
+        z-index: 9999;
+        background: rgba(11, 11, 11, 0.95);
+        backdrop-filter: blur(20px);
+        display: none;
+        align-items: center;
+        justify-content: center;
+        flex-direction: column;
+        gap: 28px;
+    }
+
+    .global-loader[aria-hidden="false"] {
+        display: flex;
+    }
+
+    .global-spinner {
+        display: none;
+        width: 56px;
+        height: 56px;
+        border-radius: 50%;
+        border: 3px solid rgba(253, 199, 0, 0.1);
+        border-top-color: var(--y-400);
+        animation: spin 1.2s cubic-bezier(0.68, -0.55, 0.27, 1.55) infinite;
+    }
+
+    .global-loader-content {
+        text-align: center;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 18px;
+    }
+
+    .global-loader-text {
+        color: var(--text);
+        font-size: 18px;
+        font-weight: 700;
+        letter-spacing: 0.4px;
+    }
+
+    .global-loader-subtext {
+        color: var(--muted);
+        font-size: 14px;
+        opacity: 0.8;
+    }
+
+    .global-loader-progress {
+        width: 200px;
+        height: 4px;
+        background: rgba(253, 199, 0, 0.15);
+        border-radius: 4px;
+        overflow: hidden;
+    }
+
+    .global-loader-progress-bar {
+        height: 100%;
+        background: linear-gradient(90deg, var(--y-400), var(--y-300));
+        border-radius: 4px;
+        width: 45%;
+        animation: globalProgressSlide 2.2s ease-in-out infinite;
+    }
+
+    @keyframes globalProgressSlide {
+        0% { transform: translateX(-100%); }
+        50% { transform: translateX(200%); }
+        100% { transform: translateX(-100%); }
+    }
+    
+  </style>
+</head>
+<body>
+  <body>
+  <!-- ДОДАЙ ЦЕЙ БЛОК -->
+  <div class="global-loader" id="global-loader" aria-hidden="true">
+    <div class="global-spinner"></div>
+    <div class="global-loader-content">
+      <div class="global-loader-text">Завантаження дашборду</div>
+      <div class="global-loader-subtext">Бюджетний дашборд</div>
+      <div class="global-loader-progress">
+        <div class="global-loader-progress-bar"></div>
+      </div>
+    </div>
+  </div>
+  <!-- ========= TOP BAR ========= -->
+  <div class="topbar">
+    <div class="brand">
+      <div class="brand-badge">₴</div>
+      <div>Budget</div>
+    </div>
+    <nav class="menu" role="tablist">
+      <div class="tab" id="tab-dashboard" aria-current="page">Дашборд</div>
+      <div class="tab" id="tab-operations">Операції</div>
+      <div class="tab">Фонди</div>
+      <div class="tab">Бюджет по місяцях</div>
+      <div class="tab">Налаштування</div>
+    </nav>
+    <div class="spacer"></div>
+    <div class="toolbar">
+      <button class="btn btn--ghost" id="btn-rebuild">Перерахувати</button>
+      <button class="btn btn--primary" id="btn-add">Додати</button>
+    </div>
+  </div>
+
+  <main class="page">
+    <div id="view-dashboard">
+    <div class="head">
+      <div class="title">
+        <h1>Дашборд</h1>
+        <p>План розподілу коштів vs фактичні розподілені та витрати по фондах.</p>
+      </div>
+      <div class="filters">
+        <span class="chip">Місяць
+          <select id="month-select"></select>
+        </span>
+        <span class="chip">Рік
+          <select id="year-select"></select>
+        </span>
+        <span class="chip">
+          <span class="pill">Тема: чорна · жовта</span>
+        </span>
+      </div>
+    </div>
+
+    <!-- ===== KPI tiles ===== -->
+    <section class="kpis" style="margin-top:16px;">
+      <!-- 1) Великий на 6 колонок -->
+      <div class="kpi kpi--yellow span-4" id="kpi-income-plan">
+        <div class="kpi__label">План надходжень</div>
+        <div class="kpi__value" data-value>—</div>
+        <div class="kpi__spacer"></div>   
+        <div class="kpi__delta" data-delta></div>
+      </div>
+
+      <!-- 2–5) Компактні по 3 колонки -->
+      <div class="kpi span-2" id="kpi-plan">
+        <div class="kpi__label">План розподілу</div>
+        <div class="kpi__value" data-value>—</div>
+        <div class="spark" data-spark></div>
+        <div class="kpi__spacer"></div>   
+        <div class="kpi__pct" data-pct></div>   
+        <div class="kpi__delta" data-delta></div>
+      </div>
+
+      <div class="kpi span-2" id="kpi-allocated">
+        <div class="kpi__label">Розподілено</div>
+        <div class="kpi__value" data-value>—</div>
+        <div class="spark" data-spark></div>
+        <div class="kpi__spacer"></div>   
+        <div class="kpi__pct" data-pct></div>   
+        <div class="kpi__delta" data-delta></div>
+      </div>
+
+      <div class="kpi span-2" id="kpi-spent">
+        <div class="kpi__label">Витрачено</div>
+        <div class="kpi__value" data-value>—</div>
+        <div class="spark" data-spark></div>
+        <div class="kpi__spacer"></div>   
+        <div class="kpi__delta" data-delta></div>
+      </div>
+
+      <div class="kpi span-2" id="kpi-gap">
+        <div class="kpi__label">Залишок</div>
+        <div class="kpi__value" data-value>—</div>
+        <div class="kpi__spacer"></div>   
+        <div class="kpi__delta" data-delta></div>
+      </div>
+    </section>
+
+    <div class="grid">
+      <!-- TOP RISKS -->
+      <section class="card col-4 soft">
+        <h3>Топ ризики</h3>
+        <div class="risk-list" id="risk-list"></div>
+      </section>
+
+      <!-- OVERVIEW TABLE -->
+      <section class="card col-8">
+        <h3>Фонди — план vs факт</h3>
+        <div class="muted" style="margin-bottom:8px">Сортування: ризик (Spent/Allocated), потім Gap</div>
+        <div class="table-wrap">
+          <table id="overview">
+            <thead>
+              <tr>
+                <th>Фонд</th>
+                <th class="muted">План<br><span class="sub">частка в плані</span></th>
+                <th>Розподілено<br><span class="sub">частка в розподілі</span></th>
+                <th>Витрачено</th>
+                <th>Gap</th>
+                <th>Прогрес</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- RECENT TRANSACTIONS -->
+      <section class="card col-12">
+        <h3>Останні операції</h3>
+        <table id="recent">
+          <thead>
+            <tr>
+              <th>Дата</th>
+              <th>Фонд</th>
+              <th>Сума</th>
+              <th>Опис</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </section>
+    </div>
+    <!-- ========= OPERATIONS VIEW ========= -->
+    <section id="view-operations" style="display:none;">
+      <div class="head">
+        <div class="title">
+          <h1>Операції</h1>
+          <p>Фільтруй по періоду та фонду. Дані вантажаться тільки в межах обраного періоду.</p>
+        </div>
+        <div class="filters">
+          <span class="chip">Від
+            <input type="date" id="ops-from" class="input" />
+          </span>
+          <span class="chip">До
+            <input type="date" id="ops-to" class="input" />
+          </span>
+          <span class="chip">Фонд
+            <select id="ops-fund" class="input">
+              <option value="">Усі</option>
+            </select>
+          </span>
+          <span class="chip">На сторінці
+            <select id="ops-size" class="input">
+              <option>50</option><option>100</option><option>200</option>
+            </select>
+          </span>
+          <button class="btn" id="ops-apply">Застосувати</button>
+        </div>
+      </div>
+
+      <section class="card" style="margin-top:16px; position:relative;">
+        <!-- локальний лоадер -->
+        <div class="block-loader" id="ops-loader" aria-hidden="true">
+          <div class="spinner"></div>
+        </div>
+
+        <h3>Результати</h3>
+        <div class="table-wrap">
+          <table id="ops-table">
+            <thead>
+              <tr>
+                <th>Дата</th>
+                <th>Фонд</th>
+                <th>Сума</th>
+                <th>Опис</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+
+        <div class="ops-pager" style="display:flex; gap:8px; align-items:center; margin-top:10px;">
+          <button class="btn btn--ghost" id="ops-prev">Назад</button>
+          <div class="muted" id="ops-meta">Сторінка 1/1</div>
+          <button class="btn btn--ghost" id="ops-next">Вперед</button>
+        </div>
+      </section>
+    </section>
+
+  </main>
+
+  <script>
+    // =====================
+    //  DATA CONTRACT
+    // =====================
+    // getBootstrap() -> { settings: {activeYear}, ... }
+    // getDashboard({year, month}) -> {
+    //   monthKey: 'YYYY-MM',
+    //   kpis: { plannedIncomesTotal, plannedTotal, allocatedTotal, spentTotal, mom:{...}, sparks:{planned,allocated,spent} },
+    //   items: [ { fund, plan, allocated, spent, gap, score } ... ],
+    //   recent: [ {date, fund, amount, details} ... ],
+    //   months: ['2025-08','2025-09', ...]
+    // }
+
+    const isAppsScript = typeof google !== 'undefined' && google.script && google.script.run;
+
+    /* ===== UI refs ===== */
+    const UI = {
+      month: document.getElementById('month-select'),
+      year: document.getElementById('year-select'),
+      riskList: document.getElementById('risk-list'),
+      overviewBody: document.querySelector('#overview tbody'),
+      recentBody: document.querySelector('#recent tbody'),
+      kpis: {
+        incomePlan: {
+          value: document.querySelector('#kpi-income-plan [data-value]'),
+          delta: document.querySelector('#kpi-income-plan [data-delta]')
+        },
+        plan: {
+          value: document.querySelector('#kpi-plan [data-value]'),
+          spark: document.querySelector('#kpi-plan [data-spark]'),
+          pct:   document.querySelector('#kpi-plan [data-pct]'),  
+          delta: document.querySelector('#kpi-plan [data-delta]')
+        },
+        allocated: {
+          value: document.querySelector('#kpi-allocated [data-value]'),
+          spark: document.querySelector('#kpi-allocated [data-spark]'),
+          pct:   document.querySelector('#kpi-allocated [data-pct]'),
+          delta: document.querySelector('#kpi-allocated [data-delta]')
+        },
+        spent: {
+          value: document.querySelector('#kpi-spent [data-value]'),
+          spark: document.querySelector('#kpi-spent [data-spark]'),
+          delta: document.querySelector('#kpi-spent [data-delta]')
+        },
+        gap: {
+          value: document.querySelector('#kpi-gap [data-value]'),
+          delta: document.querySelector('#kpi-gap [data-delta]')
+        }
+      }
+    };
+
+    // ===== GLOBAL LOADER =====
+    function showLoader(show) {
+        const loader = document.getElementById('global-loader');
+        if (loader) {
+            loader.style.display = show ? 'flex' : 'none';
+        }
+    }
+
+    let BOOT = null;
+    let CURRENT = {year: null, month: null};
+
+    /* ===== Utils ===== */
+    function fmtMoney(x){
+      if (x === undefined || x === null || isNaN(x)) return '—';
+      return new Intl.NumberFormat('uk-UA',{style:'currency', currency:'UAH', maximumFractionDigits:0}).format(Number(x));
+    }
+    function renderDelta(el, delta, goodMode){
+      // goodMode: 'up' або 'down' — що вважаємо «краще»
+      el.innerHTML = '';
+      if (delta === null || delta === undefined) { el.textContent = '—'; return; }
+      const up = delta > 0;
+      const cls = up ? 'delta--up' : 'delta--down';
+      const wrap = document.createElement('span');
+      wrap.className = `delta ${cls}`;
+      const arrow = up ? '▲' : '▼';
+      const sign = delta>0 ? '+' : '−';
+      wrap.innerHTML = `<i>${arrow}</i> ${sign}${fmtMoney(Math.abs(delta))}`;
+      el.appendChild(wrap);
+    }
+    function spark(container, arr){
+      if (!container) return;
+      container.innerHTML = '';
+      const max = Math.max(1, ...arr.map(v=>Math.abs(v)));
+      arr.forEach(v=>{
+        const b = document.createElement('div');
+        b.className = 'bar';
+        b.style.height = (6 + (Math.abs(v)/max)*28) + 'px';
+        container.appendChild(b);
+      });
+    }
+
+    /* ===== Render ===== */
+    function renderDashboard(model){
+      console.log('snapshot?:', model && model._snapshot, 'cached flag:', model && model._cached);
+
+      // KPIs (значення)
+      UI.kpis.incomePlan.value.textContent = fmtMoney(model.kpis.plannedIncomesTotal);
+      UI.kpis.plan.value.textContent        = fmtMoney(model.kpis.plannedTotal);
+      UI.kpis.allocated.value.textContent   = fmtMoney(model.kpis.allocatedTotal);
+      UI.kpis.spent.value.textContent       = fmtMoney(model.kpis.spentTotal);
+
+      // Відсотки від плану надходжень (для Плану і Розподілено)
+      const r = model.kpis.ratios || {};
+      function pctStr(x){ return (x==null) ? '—' : (Math.round(x*1000)/10).toFixed(1) + '%'; }
+
+      UI.kpis.plan.pct.textContent       = pctStr((model.kpis.ratios||{}).planPctOfIncome);
+      UI.kpis.allocated.pct.textContent  = pctStr((model.kpis.ratios||{}).allocatedPctOfPlan);  // <— ОНОВЛЕНО
+
+      // Підсвітка тренду % (MoM): більше — зелений, менше — червоний
+      const rp = (model.kpis.mom && model.kpis.mom.ratios) || {};
+      UI.kpis.plan.pct.classList.remove('kpi__pct--up','kpi__pct--down');
+      UI.kpis.allocated.pct.classList.remove('kpi__pct--up','kpi__pct--down');
+      if (rp.planPctDelta != null){
+        UI.kpis.plan.pct.classList.add(rp.planPctDelta > 0 ? 'kpi__pct--up' : 'kpi__pct--down');
+      }
+      if (rp.allocatedPctDelta != null){
+        UI.kpis.allocated.pct.classList.add(rp.allocatedPctDelta > 0 ? 'kpi__pct--up' : 'kpi__pct--down');
+      }
+
+
+      // Gap = Allocated - Spent
+      const gap = Number(model.kpis.allocatedTotal||0) - Number(model.kpis.spentTotal||0);
+      UI.kpis.gap.value.textContent         = fmtMoney(gap);
+
+      // Спарклайни
+      const s = model.kpis.sparks || {};
+      spark(UI.kpis.plan.spark,      s.planned || []);
+      spark(UI.kpis.allocated.spark, s.allocated || []);
+      spark(UI.kpis.spent.spark,     s.spent || []);
+
+      // МоМ-дельти (до такого ж дня попереднього місяця)
+      const mom = model.kpis.mom || {};
+      renderDelta(UI.kpis.incomePlan.delta, mom.incomes,   'up');   // більше плану надходжень — краще
+      renderDelta(UI.kpis.plan.delta,       mom.planDist,  'up');   // більше планового розподілу — ок
+      renderDelta(UI.kpis.allocated.delta,  mom.allocated, 'up');   // більше розподілено — краще
+      renderDelta(UI.kpis.spent.delta,      mom.spent,     'down'); // більше витрачено — гірше
+      const momGap = (mom.allocated ?? 0) - (mom.spent ?? 0);
+      renderDelta(UI.kpis.gap.delta, momGap, 'up'); // більший позитивний геп — краще
+
+      // Risk list (top 5)
+      UI.riskList.innerHTML = '';
+      (model.items||[]).slice(0,5).forEach((row, idx)=>{
+        const el = document.createElement('div');
+        el.className = 'risk-item';
+        const badgeClass = row.spent > row.allocated ? 'badge badge--danger'
+                          : (row.spent >= 0.8*row.allocated ? 'badge badge--warn' : 'badge badge--ok');
+        el.innerHTML = `
+          <div class="risk-rank">${idx+1}</div>
+          <div>
+            <div class="risk-name">${row.fund}</div>
+            <div class="muted">План ${fmtMoney(row.plan)} · Розподілено ${fmtMoney(row.allocated)}</div>
+          </div>
+          <div class="risk-metrics">
+            <span class="${badgeClass}">Витрачено: ${fmtMoney(row.spent)}</span>
+            <span class="badge">Відхилення: ${fmtMoney(row.gap)}</span>
+          </div>`;
+        UI.riskList.appendChild(el);
+      });
+
+      // Overview table
+      UI.overviewBody.innerHTML = '';
+      (model.items||[]).forEach(row=>{
+        const tr = document.createElement('tr');
+        const progress = Math.min(1, row.spent / Math.max(row.allocated, 1e-9));
+        tr.innerHTML = `
+          <td><strong>${row.fund}</strong></td>
+          <td class="muted">
+            ${fmtMoney(row.plan)}
+            <div class="sub"><span class="pct-badge">${Math.round(row.planPct*100)}%</span></div>
+          </td>
+          <td>
+            ${fmtMoney(row.allocated)}
+            <div class="sub"><span class="pct-badge">${Math.round(row.allocatedPct*100)}%</span></div>
+          </td>
+          <td>${fmtMoney(row.spent)}</td>
+          <td>${fmtMoney(row.gap)}</td>
+          <td><div class="progress"><i style="width:${(progress*100).toFixed(1)}%"></i></div></td>`;
+
+        UI.overviewBody.appendChild(tr);
+      });
+
+      // Recent transactions
+      UI.recentBody.innerHTML = '';
+      (model.recent||[]).forEach(tx=>{
+        const tr = document.createElement('tr');
+        const d = new Date(tx.date);
+        tr.innerHTML = `
+          <td>${d.toLocaleDateString('uk-UA')}</td>
+          <td>${tx.fund||'—'}</td>
+          <td>${fmtMoney(tx.amount)}</td>
+          <td>${tx.details||''}</td>`;
+        UI.recentBody.appendChild(tr);
+      });
+    }
+
+    /* ===== Data flow ===== */
+    function fillMonths(year, months){
+      UI.year.innerHTML = '';
+      const yopt = document.createElement('option');
+      yopt.value = String(year); yopt.textContent = String(year);
+      UI.year.appendChild(yopt);
+
+      UI.month.innerHTML = '';
+      months.forEach(m=>{
+        const o = document.createElement('option');
+        o.value = m; // 'YYYY-MM'
+        const [yy,mm] = m.split('-');
+        const dt = new Date(Number(yy), Number(mm)-1, 1);
+        o.textContent = dt.toLocaleString('uk-UA',{ month:'long', year:'numeric' });
+        UI.month.appendChild(o);
+      });
+    }
+
+    function loadDashboard(){
+        if (!CURRENT.year || !CURRENT.month) return;
+        
+        // ПОКАЗАТИ ЛОАДЕР ПРИ ЗАВАНТАЖЕННІ ДАНИХ
+        showLoader(true);
+        
+        if (isAppsScript){
+            google.script.run.withSuccessHandler(model=>{
+                renderDashboard(model);
+                // СХОВАТИ ЛОАДЕР
+                showLoader(false);
+            }).getDashboard({year: CURRENT.year, month: CURRENT.month});
+        } else {
+            renderDashboard(buildMock());
+            // СХОВАТИ ЛОАДЕР
+            showLoader(false);
+        }
+    }
+
+    // ===== OPERATIONS VIEW STATE =====
+    const OPS = {
+      page: 1,
+      size: 50,
+      from: null,
+      to: null,
+      fund: '',
+      metaEl: null,
+      tbody: null,
+      loader: null
+    };
+
+    function showOpsLoader(v){
+      if (!OPS.loader) return;
+      OPS.loader.setAttribute('aria-hidden', v ? 'false' : 'true');
+    }
+
+    function renderOpsTable(model){
+      // model: { meta:{page,size,total,pages}, items:[...] }
+      OPS.tbody.innerHTML = '';
+      (model.items || []).forEach(t=>{
+        const tr = document.createElement('tr');
+        const d = new Date(t.date);
+        tr.innerHTML = `
+          <td>${d.toLocaleDateString('uk-UA')}</td>
+          <td>${t.fund || '—'}</td>
+          <td>${fmtMoney(t.amount)}</td>
+          <td>${t.details || ''}</td>`;
+        OPS.tbody.appendChild(tr);
+      });
+      const m = model.meta || {page:1,pages:1,total:0,size:OPS.size};
+      OPS.metaEl.textContent = `Сторінка ${m.page}/${m.pages} · Записів: ${m.total}`;
+      OPS.page = m.page; OPS.size = m.size;
+    }
+
+    function opsFetch(){
+      showOpsLoader(true);
+      const params = {
+        year: CURRENT.year || (new Date()).getFullYear(),
+        from: OPS.from || null,
+        to: OPS.to || null,
+        page: OPS.page,
+        size: OPS.size,
+        fund: OPS.fund || null
+      };
+      if (isAppsScript){
+        // якщо бекенд ще не готовий — спрацює failureHandler і покажемо мок
+        google.script.run
+          .withFailureHandler(()=>{ renderOpsTable({meta:{page:1,pages:1,total:0,size:OPS.size}, items:[]}); showOpsLoader(false); })
+          .withSuccessHandler((res)=>{ renderOpsTable(res); showOpsLoader(false); })
+          .getTransactionsView(params);
+      } else {
+        // локальний мок
+        const items = (buildMock().recent || []).map(x=>({ date:x.date, fund:x.fund, amount:x.amount, details:x.details }));
+        renderOpsTable({ meta:{page:1,pages:1,total:items.length,size:OPS.size}, items:items.slice(0, OPS.size) });
+        showOpsLoader(false);
+      }
+    }
+
+    // ===== GLOBAL LOADER FUNCTIONS =====
+    function showGlobalLoader(show, text = 'Завантаження дашборду', subtext = 'Бюджетний дашборд') {
+        const el = document.getElementById('global-loader');
+        const textEl = el?.querySelector('.global-loader-text');
+        const subtextEl = el?.querySelector('.global-loader-subtext');
+        
+        if (!el) return;
+        
+        if (show) {
+            if (textEl) textEl.textContent = text;
+            if (subtextEl) subtextEl.textContent = subtext;
+            el.setAttribute('aria-hidden', 'false');
+        } else {
+            el.setAttribute('aria-hidden', 'true');
+            // Reset text after hide
+            setTimeout(() => {
+                if (textEl) textEl.textContent = 'Завантаження дашборду';
+                if (subtextEl) subtextEl.textContent = 'Бюджетний дашборд';
+            }, 400);
+        }
+    }
+
+    function init(){
+    // ПОКАЗАТИ ЛОАДЕР НА ПОЧАТКУ
+    showLoader(true);
+    
+    if (isAppsScript){
+        google.script.run.withSuccessHandler(boot=>{
+            BOOT = boot; CURRENT.year = boot.settings.activeYear;
+            google.script.run.withSuccessHandler(model=>{
+                fillMonths(CURRENT.year, model.months);
+                CURRENT.month = model.months[model.months.length-1];
+                UI.month.addEventListener('change', (e)=>{ CURRENT.month = e.target.value; loadDashboard(); });
+                document.getElementById('btn-rebuild').addEventListener('click', ()=>{
+                    if (!CURRENT.year || !CURRENT.month) return;
+                    google.script.run.withSuccessHandler(renderDashboard)
+                        .rebuildDashboard({ year: CURRENT.year, month: CURRENT.month });
+                });
+                UI.year.addEventListener('change',  (e)=>{ CURRENT.year  = Number(e.target.value); loadDashboard(); });
+                
+                // Tabs: перемикання між Дашбордом і Операціями
+                const tabDash = document.getElementById('tab-dashboard');
+                const tabOps  = document.getElementById('tab-operations');
+                const viewDash = document.getElementById('view-dashboard');
+                const viewOps  = document.getElementById('view-operations');
+
+                function switchTo(view){
+                    if (view === 'ops'){
+                        tabDash.removeAttribute('aria-current');
+                        tabOps.setAttribute('aria-current','page');
+                        viewDash.style.display = 'none';
+                        viewOps.style.display  = '';
+                        if (!OPS.tbody){
+                            OPS.tbody  = document.querySelector('#ops-table tbody');
+                            OPS.metaEl = document.getElementById('ops-meta');
+                            OPS.loader = document.getElementById('ops-loader');
+
+                            const funds = (BOOT && BOOT.funds ? BOOT.funds : (model?.items||[]).map(r=>r.fund)).filter(Boolean);
+                            const uniq = Array.from(new Set(funds));
+                            const sel = document.getElementById('ops-fund');
+                            uniq.forEach(f=>{ const o=document.createElement('option'); o.value=f; o.textContent=f; sel.appendChild(o); });
+
+                            // Якщо дати порожні при першому вході — підставити поточний місяць (1..кінець)
+                            const fromInput = document.getElementById('ops-from');
+                            const toInput   = document.getElementById('ops-to');
+                            if (!fromInput.value && !toInput.value) {
+                              const now  = new Date();
+                              const from = new Date(now.getFullYear(), now.getMonth(), 1);
+                              const to   = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+                              fromInput.value = from.toISOString().slice(0,10);
+                              toInput.value   = to.toISOString().slice(0,10);
+                              OPS.from = fromInput.value;
+                              OPS.to   = toInput.value;
+                            }
+
+                            document.getElementById('ops-apply').addEventListener('click', ()=>{
+                                // Зчитати значення з форми
+                                const fromEl = document.getElementById('ops-from');
+                                const toEl   = document.getElementById('ops-to');
+                                OPS.from = fromEl.value || null;
+                                OPS.to   = toEl.value   || null;
+                                OPS.fund = document.getElementById('ops-fund').value || '';
+                                OPS.size = Number(document.getElementById('ops-size').value) || 50;
+                                OPS.page = 1;
+
+                                // Якщо обидві дати порожні — ПІДСТАВИТИ поточний місяць (одноразово за цей клік)
+                                if (!OPS.from && !OPS.to) {
+                                  const now  = new Date();
+                                  const from = new Date(now.getFullYear(), now.getMonth(), 1);
+                                  const to   = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+                                  fromEl.value = from.toISOString().slice(0,10);
+                                  toEl.value   = to.toISOString().slice(0,10);
+                                  OPS.from = fromEl.value;
+                                  OPS.to   = toEl.value;
+                                }
+
+                                opsFetch();
+                            });
+                            document.getElementById('ops-prev').addEventListener('click', ()=>{ if (OPS.page>1){ OPS.page--; opsFetch(); } });
+                            document.getElementById('ops-next').addEventListener('click', ()=>{ OPS.page++; opsFetch(); });
+                        }
+                        // Синхронізувати OPS зі значеннями форми перед першим fetch у цій сесії
+                        const fromEl = document.getElementById('ops-from');
+                        const toEl   = document.getElementById('ops-to');
+                        OPS.from = fromEl.value || OPS.from || null;
+                        OPS.to   = toEl.value   || OPS.to   || null;
+                        OPS.fund = document.getElementById('ops-fund').value || OPS.fund || '';
+                        OPS.size = Number(document.getElementById('ops-size').value) || OPS.size || 50;
+                        opsFetch();
+                    } else {
+                        tabOps.removeAttribute('aria-current');
+                        tabDash.setAttribute('aria-current','page');
+                        viewOps.style.display  = 'none';
+                        viewDash.style.display = '';
+                    }
+                }
+                tabDash.addEventListener('click', ()=>switchTo('dash'));
+                tabOps.addEventListener('click',  ()=>switchTo('ops'));
+                
+                renderDashboard(model);
+                // СХОВАТИ ЛОАДЕР ПІСЛЯ ЗАВАНТАЖЕННЯ
+                showLoader(false);
+            }).getDashboard({year: CURRENT.year, month: null});
+        }).getBootstrap();
+    } else {
+        const mock = buildMock();
+        CURRENT.year = 2025; CURRENT.month = mock.monthKey;
+        fillMonths(CURRENT.year, [mock.monthKey]);
+        UI.month.addEventListener('change', (e)=>{ CURRENT.month = e.target.value; loadDashboard(); });
+        document.getElementById('btn-rebuild').addEventListener('click', ()=>{
+            renderDashboard(buildMock());
+        });
+        renderDashboard(mock);
+        // СХОВАТИ ЛОАДЕР ПІСЛЯ МОК ДАНИХ
+        showLoader(false);
+    }
+}
+
+    /* ===== Local mock (for preview without Apps Script) ===== */
+    function buildMock(){
+      const items = [
+        {fund:'Пальне', plan: 6000, allocated: 5000, spent: 5200},
+        {fund:'Продукти', plan: 12000, allocated: 10000, spent: 9800},
+        {fund:'Комуналка', plan: 8000, allocated: 6000, spent: 7000},
+        {fund:'Одяг', plan: 4000, allocated: 3000, spent: 1500},
+        {fund:'Подарунки', plan: 5000, allocated: 3500, spent: 4200},
+      ].map(x=> ({...x, gap: (x.allocated - x.spent), score: (x.spent / Math.max(x.allocated,1e-9))}));
+      items.sort((a,b)=> b.score - a.score || a.gap - b.gap);
+      const m = {
+        plannedTotal: items.reduce((s,x)=>s+x.plan,0),
+        allocatedTotal: items.reduce((s,x)=>s+x.allocated,0),
+        spentTotal: items.reduce((s,x)=>s+x.spent,0)
+      };
+      return {
+        monthKey: '2025-09',
+        kpis: {
+          plannedIncomesTotal: 0,
+          plannedTotal: m.plannedTotal,
+          allocatedTotal: m.allocatedTotal,
+          spentTotal: m.spentTotal,
+          mom: { incomes:null, planDist:null, allocated:null, spent:null },
+          sparks: { planned:[8,9,7,10,11,12], allocated:[7,8,6,9,10,9], spent:[6,7,5,9,10,8] }
+        },
+        items,
+        months: ['2025-09'],
+        recent: [
+          {date:'2025-09-18', fund:'Продукти', amount:-480, details:'АТБ'},
+          {date:'2025-09-17', fund:'Пальне', amount:-1500, details:'OKKO'},
+          {date:'2025-09-16', fund:'Комуналка', amount:-900, details:'Електроенергія'},
+          {date:'2025-09-16', fund:'Подарунки', amount:-700, details:'LEGO'},
+          {date:'2025-09-15', fund:'Одяг', amount:-650, details:'H&M'}
+        ]
+      };
+    }
+
+    init();
+  </script>
+</body>
+</html>
