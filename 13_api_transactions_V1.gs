@@ -10,7 +10,7 @@
 var TX_VIEW_DEFAULT_SIZE = 50;
 var TX_VIEW_MAX_SIZE = 500;
 
-// === SPLIT (рознесення) для Операцій ======================================
+// === SPLIT (рознесення) ======================================================
 var SPLIT_MCC_CODE = (PropertiesService.getScriptProperties().getProperty('SPLIT_MCC_CODE') || '9997').trim();
 function getTransactionsView(params){
   const u = getUserSettings();
@@ -171,60 +171,54 @@ function _loadUniqueFundsListFromModel_(){
 }
 
 /**
- * UA: Побудова payload для модалки рознесення за txId або bankId (група).
- * EN: Build split payload from tx_YYYY.json matching id/group.
+ * UA: Побудова payload групи для рознесення за txId або bankId.
+ * EN: Build split payload from tx_YYYY.json (group by bankId).
  * args: { txId?:string, bankId?:string }
  * return: { bankId, mainItem, items:[...], mainAmount, funds:[], year, indexMap:{itemId:{year,idx}} }
  */
 function txBuildSplitPayload(args){
   args = args || {};
-  var txId  = String(args.txId||'').trim();
+  var txId = String(args.txId||'').trim();
   var bankId = String(args.bankId||'').trim();
 
-  // 1) Визначити рік та знайти запис
-  var years = _collectTxYears_();
-  var hit = null, hitYear = null, hitIdx = -1;
-
-  years.forEach(function(y){
+  // Визначити рік і запис
+  var candidates = _collectTxYears_ ? _collectTxYears_() : [new Date().getFullYear(), new Date().getFullYear()-1, new Date().getFullYear()+1];
+  var hit=null, hitYear=null, hitIdx=-1;
+  candidates.forEach(function(y){
     if (hit) return;
-    var list = _readTxListForYear_(y);
+    var list = readJson('tx_' + y + '.json') || [];
     for (var i=0;i<list.length;i++){
-      var it = list[i] || {};
-      var itId = String(it.id||it.itemId||'').trim();
-      var itBank = String(it.bankId||it.id||'').trim();
-      if ((txId && itId===txId) || (bankId && itBank===bankId)) { hit = it; hitYear = y; hitIdx = i; break; }
+      var it = list[i]||{};
+      var itId = String(it.itemId||it.id||'').trim();
+      var itBank = String(it.bankId||it.id||'').trim(); // груповий ключ
+      if ((txId && itId===txId) || (bankId && itBank===bankId)) { hit=it; hitYear=y; hitIdx=i; break; }
     }
   });
   if (!hit) throw new Error('Транзакцію не знайдено');
 
   bankId = String(hit.bankId||hit.id||'').trim();
-  var listY = _readTxListForYear_(hitYear);
+  var listY = readJson('tx_' + hitYear + '.json') || [];
 
-  // 2) Визначити групу (усі записи з тим же bankId). SPLIT частини можуть мати mcc == SPLIT_MCC_CODE.
-  var group = [];
+  // Зібрати групу
+  var group=[]; 
   for (var j=0;j<listY.length;j++){
-    var it2 = listY[j]||{};
-    var same = String(it2.bankId||it2.id||'').trim() === bankId;
-    if (same){ group.push({ item: it2, year: hitYear, idx: j }); }
+    var it2=listY[j]||{};
+    if (String(it2.bankId||it2.id||'').trim()===bankId){ group.push({ item: it2, year: hitYear, idx: j }); }
   }
-  var main = null;
-  group.forEach(function(g){ if(!g.item.isSplitPart){ main = g; } });
-  if (!main && group.length) main = group[0];
+  var main=null; group.forEach(function(g){ if(!g.item.isSplitPart){ main=g; } }); if(!main && group.length) main=group[0];
 
-  var mainAmountRaw = Number(main && (main.item.amount||0)) || 0;
-  var mainAmount = Math.abs(mainAmountRaw);
+  var mainAmount=Number(main && (main.item.amount||0))||0;
 
-  // 3) Фонди
-  var funds = _loadUniqueFundsListFromModel_();
+  // Фонди (адаптуй під твій довідник, якщо є утиліта — використай її)
+  var funds=_loadUniqueFundsListFromModel_ ? _loadUniqueFundsListFromModel_() : [];
 
-  // 4) Побудувати items для модалки
-  var items = group.map(function(g){
+  var items=group.map(function(g){
     return {
       itemId: String(g.item.itemId||g.item.id||('it_'+g.idx)),
       isSplitPart: !!g.item.isSplitPart,
       date: g.item.date,
       fund: String(g.item.fund||'').trim(),
-      amount: Number(g.item.amount||0) || 0,
+      amount: Number(g.item.amount||0)||0,
       details: String(g.item.details||'').trim(),
       mcc: String(g.item.mcc||'').trim(),
       descr: String(g.item.descr||'').trim(),
@@ -232,10 +226,9 @@ function txBuildSplitPayload(args){
     };
   });
 
-  var indexMap = {};
-  group.forEach(function(g){
-    var key = String(g.item.itemId||g.item.id||('it_'+g.idx));
-    indexMap[key] = { year: g.year, idx: g.idx };
+  var indexMap={}; group.forEach(function(g){
+    var key=String(g.item.itemId||g.item.id||('it_'+g.idx));
+    indexMap[key]={ year:g.year, idx:g.idx };
   });
 
   return {
@@ -251,7 +244,7 @@ function txBuildSplitPayload(args){
 
 /**
  * UA: Збереження рознесення у tx_YYYY.json + інвалідація кешу.
- * args: { bankId, mainItem, items:[{itemId,fund,amount,details}], year, indexMap }
+ * args: { bankId, mainItem, items:[{itemId?,fund,amount,details}], year, indexMap }
  */
 function txSaveSplitAllocation(args){
   args = args || {};
@@ -260,75 +253,55 @@ function txSaveSplitAllocation(args){
   var mainItem = args.mainItem || {};
   var parts = Array.isArray(args.items) ? args.items : [];
   var indexMap = args.indexMap || {};
-
   if (!bankId || !year) throw new Error('Некоректні параметри рознесення');
 
-  var list = _readTxListForYear_(year);
+  var list = readJson('tx_' + year + '.json') || [];
 
-  var mainKey = String(mainItem.itemId||mainItem.id||'').trim();
+  // Перерахунок
+  var addSum = parts.reduce(function(s,it){ return s + (Number(it.amount)||0); }, 0);
+  var mainKey = String(mainItem.itemId||mainItem.id||'');
   var mainIdx = (indexMap[mainKey]||{}).idx;
-  if (typeof mainIdx !== 'number') {
-    for (var seek=0; seek<list.length; seek++){
-      var candidateId = String(list[seek] && (list[seek].itemId||list[seek].id)||'').trim();
-      if (candidateId === mainKey) { mainIdx = seek; break; }
-    }
-  }
   if (typeof mainIdx !== 'number') throw new Error('Не знайдено основний елемент');
 
-  var main = list[mainIdx];
-  if (!main) throw new Error('Не знайдено основний елемент');
+  var main = list[mainIdx] || {};
+  var newMainAmount = Math.max(0, Number(main.amount||0) - addSum);
 
-  var mainRaw = Number(main.amount||0) || 0;
-  var mainSign = mainRaw < 0 ? -1 : 1;
-  var mainAbs = Math.abs(mainRaw);
+  // Оновити основний
+  main.fund = String(mainItem.fund||main.fund||'').trim();
+  main.details = String(mainItem.details||main.details||'').trim();
+  main.amount = newMainAmount;
+  main.mcc = SPLIT_MCC_CODE;
+  main.isSplitPart = false;
+  main.bankId = bankId;
 
-  var addSum = parts.reduce(function(s,it){ return s + Math.abs(Number(it.amount)||0); }, 0);
-  var newMainAbs = Math.max(0, mainAbs - addSum);
-
+  // Прибрати існуючі частини цієї групи (крім main)
   list = list.filter(function(it, idx){
     var same = String(it.bankId||it.id||'').trim() === bankId;
     var isMain = idx === mainIdx;
     return !(same && !isMain);
   });
 
-  main = list.find(function(it){ return String(it.bankId||it.id||'').trim() === bankId && !it.isSplitPart; }) || main;
-  if (!main) throw new Error('Не знайдено основний елемент після очищення');
-  mainIdx = list.indexOf(main);
-
-  main.fund = String(mainItem.fund||main.fund||'').trim();
-  main.details = String(mainItem.details||main.details||'').trim();
-  main.amount = mainSign * newMainAbs;
-  main.mcc = SPLIT_MCC_CODE;
-  main.isSplitPart = false;
-  main.bankId = bankId;
-  if (!main.itemId) main.itemId = String(main.id || Utilities.getUuid());
-
-  var parentId = String(main.itemId||main.id||'');
-  var insertIndex = mainIdx;
-  parts.forEach(function(p){
-    var amtAbs = Math.abs(Number(p.amount)||0);
-    var sign = mainSign || (main.amount < 0 ? -1 : 1);
-    var newItemId = String(p.itemId || Utilities.getUuid());
-    var part = {
-      id: newItemId,
-      itemId: newItemId,
+  // Додати нові частини
+  var stamp = (new Date()).toISOString().slice(0,19).replace('T',' ');
+  for (var i=0;i<parts.length;i++){
+    var p=parts[i]||{};
+    list.splice(mainIdx+1+i, 0, {
+      id: String(p.itemId||('sp_'+Date.now()+'_'+i)),
+      itemId: String(p.itemId||('sp_'+Date.now()+'_'+i)),
       bankId: bankId,
       date: main.date,
       fund: String(p.fund||'').trim(),
-      amount: sign * amtAbs,
+      amount: Number(p.amount)||0,
       details: String(p.details||'').trim(),
       mcc: SPLIT_MCC_CODE,
-      descr: 'Рознесено — ' + (new Date()).toISOString().slice(0,19).replace('T',' '),
+      descr: 'Рознесено — ' + stamp,
       isSplitPart: true,
-      parentId: parentId
-    };
-    insertIndex++;
-    list.splice(insertIndex, 0, part);
-  });
+      parentId: String(main.itemId||main.id||'')
+    });
+  }
 
-  _writeTxListForYear_(year, list);
-  if (typeof cacheInvalidate === 'function') { try { cacheInvalidate('tx:Y'+year); } catch (e) {} }
-
+  writeJson('tx_' + year + '.json', list);
+  if (typeof cacheInvalidate === 'function') { try { cacheInvalidate('tx:Y'+year); } catch(e){} }
   return { ok:true };
 }
 
