@@ -74,6 +74,8 @@
     .btn{ padding:9px 14px; border-radius:12px; border:1px solid var(--outline); background:var(--card); color:var(--text); cursor:pointer; box-shadow: var(--shadow); }
     .btn--primary{ background: var(--y-500); color:#111; border-color: transparent; }
     .btn--ghost{ background: transparent; border-color: var(--outline); }
+    .nav-btn.active{ border-color:#ffcc00; color:#ffcc00; font-weight:700 }
+    .view-pad{ padding:12px }
 
     /* ====== Page Head ====== */
     .page{ max-width: 1280px; margin: 0 auto; padding: 16px; }
@@ -369,11 +371,11 @@
       <div>Budget</div>
     </div>
     <nav class="menu" role="tablist">
-      <div class="tab" id="tab-link-dashboard" data-tab-link="dashboard" aria-current="page">Дашборд</div>
-      <div class="tab" id="tab-link-operations" data-tab-link="operations">Операції</div>
-      <div class="tab">Фонди</div>
-      <div class="tab">Бюджет по місяцях</div>
-      <div class="tab">Налаштування</div>
+      <button type="button" class="btn nav-btn" id="btnTabDashboard" data-tab-link="dashboard">Дашборд</button>
+      <button type="button" class="btn nav-btn" id="btnTabOperations" data-tab-link="operations">Операції</button>
+      <button type="button" class="btn nav-btn" id="btnTabFunds" data-tab-link="funds">Фонди</button>
+      <button type="button" class="btn nav-btn" id="btnTabBudget" data-tab-link="budget">Бюджет по місяцях</button>
+      <button type="button" class="btn nav-btn" id="btnTabSettings" data-tab-link="settings">Налаштування</button>
     </nav>
     <div class="spacer"></div>
     <div class="toolbar">
@@ -550,6 +552,27 @@
           <div id="ops-pager"></div>
         </div>
       </section>
+    </section>
+
+    <section id="tab-funds" data-tab-content style="display:none">
+      <div class="view-pad">
+        <h2>Фонди</h2>
+        <div id="funds-root">Готуємо дані фондів…</div>
+      </div>
+    </section>
+
+    <section id="tab-budget" data-tab-content style="display:none">
+      <div class="view-pad">
+        <h2>Бюджет по місяцях</h2>
+        <div id="budget-root">Готуємо бюджет…</div>
+      </div>
+    </section>
+
+    <section id="tab-settings" data-tab-content style="display:none">
+      <div class="view-pad">
+        <h2>Налаштування</h2>
+        <div id="settings-root">Готуємо налаштування…</div>
+      </div>
     </section>
 
   </main>
@@ -837,6 +860,16 @@
     }
 
 
+    const TABS = {
+      dashboard: { btn: '#btnTabDashboard', sec: '#tab-dashboard' },
+      operations:{ btn: '#btnTabOperations', sec: '#tab-operations' },
+      funds:     { btn: '#btnTabFunds',     sec: '#tab-funds' },
+      budget:    { btn: '#btnTabBudget',    sec: '#tab-budget' },
+      settings:  { btn: '#btnTabSettings',  sec: '#tab-settings' }
+    };
+
+    function qs(sel){ return document.querySelector(sel); }
+
     // ===== OPERATIONS VIEW =====
     const OPS_STATE = {
       page: 1,
@@ -845,31 +878,37 @@
     };
 
     function showTab(name){
-      const sections = document.querySelectorAll('[data-tab-content]');
-      sections.forEach(section => {
-        const isMatch = section.id === `tab-${name}`;
-        section.style.display = isMatch ? '' : 'none';
-      });
-      const tabs = document.querySelectorAll('[data-tab-link]');
-      tabs.forEach(tab => {
-        if (tab.getAttribute('data-tab-link') === name){
-          tab.setAttribute('aria-current','page');
-        } else {
-          tab.removeAttribute('aria-current');
+      Object.keys(TABS).forEach(key => {
+        const tabConf = TABS[key];
+        const section = qs(tabConf.sec);
+        if (section){
+          section.style.display = (key === name) ? 'block' : 'none';
+        }
+        const button = qs(tabConf.btn);
+        if (button){
+          button.classList.toggle('active', key === name);
         }
       });
-      if (name === 'operations'){
+      try { location.hash = '#' + name; } catch (err) {}
+      if (name === 'operations' && typeof loadOperationsIfNeeded === 'function'){
         loadOperationsIfNeeded();
+      }
+      if (name === 'funds' && typeof loadFundsIfNeeded === 'function'){
+        loadFundsIfNeeded();
+      }
+      if (name === 'budget' && typeof loadBudgetIfNeeded === 'function'){
+        loadBudgetIfNeeded();
+      }
+      if (name === 'settings' && typeof loadSettingsIfNeeded === 'function'){
+        loadSettingsIfNeeded();
       }
     }
 
     function setupTabs(){
-      const tabs = document.querySelectorAll('[data-tab-link]');
-      tabs.forEach(tab => {
-        tab.addEventListener('click', () => {
-          const target = tab.getAttribute('data-tab-link');
-          if (target) showTab(target);
-        });
+      Object.keys(TABS).forEach(key => {
+        const btn = qs(TABS[key].btn);
+        if (!btn) return;
+        btn.addEventListener('click', () => showTab(key));
       });
     }
 
@@ -1648,7 +1687,9 @@
 
     setupTabs();
     setupOperationsUi();
-    showTab('dashboard');
+    const initialHash = (location.hash || '').replace('#','');
+    const initialTab = Object.keys(TABS).includes(initialHash) ? initialHash : 'dashboard';
+    showTab(initialTab);
     init();
 </script>
 <script>
