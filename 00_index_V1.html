@@ -187,6 +187,14 @@
       width: 100%; height:10px; background: rgba(255,255,255,0.06); border-radius: var(--radius-lg); overflow:hidden;
     }
     .progress > i{ display:block; height:100%; background: linear-gradient(90deg, var(--y-400), var(--y-700)); }
+    .split-row{ display:flex; gap:8px; align-items:center; }
+    .split-row .input.fund{ flex: 1 1 160px; }
+    .split-row .input.amt{ width:110px; }
+    .split-row .input.det{ flex: 2 1 220px; }
+    .split-row .btn{ padding:6px 10px; }
+    .split-editor{ display:grid; gap:12px; }
+    .split-editor .split-rows{ display:flex; flex-direction:column; gap:8px; }
+    .split-editor .split-error{ min-height:18px; font-size:13px; }
     /* відсотки в таблиці — «тихий» рядок під сумою */
     .sub{ margin-top:2px; font-size:12px; color: var(--muted); }
     .pct-badge{ display:inline-block; padding:2px 6px; border-radius: var(--radius-xs);
@@ -475,13 +483,14 @@
 
         <h3>Результати</h3>
         <div class="table-wrap">
-          <table id="ops-table">
+          <table id="ops-table" class="ops-table">
             <thead>
               <tr>
                 <th>Дата</th>
                 <th>Фонд</th>
                 <th>Сума</th>
                 <th>Опис</th>
+                <th>Дії</th>
               </tr>
             </thead>
             <tbody></tbody>
@@ -754,11 +763,15 @@
       (model.items || []).forEach(t=>{
         const tr = document.createElement('tr');
         const d = new Date(t.date);
+        const txId = String(t.id || t.itemId || '').trim();
+        const bankId = String(t.bankId || '').trim();
+        const splitBtn = txId ? `<button class="btn btn--ghost btn-split" data-tx-id="${txId}"${bankId ? ` data-bank-id="${bankId}"` : ''}>Рознести</button>` : '';
         tr.innerHTML = `
           <td>${d.toLocaleDateString('uk-UA')}</td>
           <td>${t.fund || '—'}</td>
           <td>${fmtMoney(t.amount)}</td>
-          <td>${t.details || ''}</td>`;
+          <td>${t.details || ''}</td>
+          <td>${splitBtn}</td>`;
         OPS.tbody.appendChild(tr);
       });
       const m = model.meta || {page:1,pages:1,total:0,size:OPS.size};
@@ -788,6 +801,205 @@
         renderOpsTable({ meta:{page:1,pages:1,total:items.length,size:OPS.size}, items:items.slice(0, OPS.size) });
         showOpsLoader(false);
       }
+    }
+
+    function setupSplitActions(){
+      const tableRoot = document.querySelector('.ops-table');
+      if (!tableRoot) return;
+      tableRoot.addEventListener('click', async (event) => {
+        const btn = event.target.closest('.btn-split');
+        if (!btn) return;
+        if (!isAppsScript || !(google && google.script && google.script.run)) {
+          if (typeof window !== 'undefined' && window.alert) {
+            window.alert('Рознесення доступне лише у середовищі Google Apps Script.');
+          }
+          return;
+        }
+        const txId = btn.getAttribute('data-tx-id') || '';
+        const bankId = btn.getAttribute('data-bank-id') || '';
+        if (!txId && !bankId) return;
+        try {
+          const payload = await new Promise((resolve, reject) => {
+            google.script.run
+              .withFailureHandler(reject)
+              .withSuccessHandler(resolve)
+              .txBuildSplitPayload({ txId, bankId });
+          });
+          await uiModal.alert('Завантажено дані рознесення', 'Рознесення');
+          const proceed = await uiModal.confirm('Відкрити редактор рознесення для операції?', 'Рознесення');
+          if (!proceed) return;
+
+          const escapeHtml = (str) => String(str == null ? '' : str)
+            .replace(/&/g,'&amp;')
+            .replace(/</g,'&lt;')
+            .replace(/>/g,'&gt;')
+            .replace(/"/g,'&quot;')
+            .replace(/'/g,'&#39;');
+
+          const datalistId = `split-funds-${Date.now()}`;
+          const fundOptions = (payload.funds || []).map((f) => {
+            const value = typeof f === 'string' ? f : (f && (f.value || f.label) || '');
+            const label = typeof f === 'string' ? f : (f && (f.label || f.value) || '');
+            return `<option value="${escapeHtml(value)}">${escapeHtml(label || value)}</option>`;
+          }).join('');
+
+          const mainFundSafe = escapeHtml(payload.mainItem && payload.mainItem.fund || '');
+          const mainDetailsSafe = escapeHtml(payload.mainItem && payload.mainItem.details || '');
+
+          const template = `
+            <div class="split-editor">
+              <p>Базова сума: <b>${fmtMoney(payload.mainAmount || 0)}</b></p>
+              <div>
+                <label class="muted" style="display:block;margin-bottom:4px;">Фонд основної операції</label>
+                <input class="input split-main-fund" list="${datalistId}" value="${mainFundSafe}">
+              </div>
+              <div>
+                <label class="muted" style="display:block;margin-bottom:4px;">Деталі</label>
+                <input class="input split-main-details" value="${mainDetailsSafe}">
+              </div>
+              <div class="split-error"></div>
+              <div class="split-rows"></div>
+              <button type="button" class="btn btn--ghost" id="add-part">+ Додати рядок</button>
+            </div>
+            <datalist id="${datalistId}">${fundOptions}</datalist>
+          `;
+
+          let formResult = null;
+          const confirmed = await uiModal.custom({
+            title: 'Рознесення',
+            body: template,
+            okText: 'Зберегти',
+            cancelText: 'Скасувати',
+            showCancel: true,
+            onOpen({ bodyEl, okBtn }){
+              const rowsHost = bodyEl.querySelector('.split-rows');
+              const addBtn = bodyEl.querySelector('#add-part');
+              const errorEl = bodyEl.querySelector('.split-error');
+              const mainFundInput = bodyEl.querySelector('.split-main-fund');
+              const mainDetailsInput = bodyEl.querySelector('.split-main-details');
+              const existingParts = (payload.items || []).filter((item) => item && item.isSplitPart);
+
+              function addRow(part){
+                const row = document.createElement('div');
+                row.className = 'split-row';
+                row.dataset.itemId = part && part.itemId ? part.itemId : '';
+
+                const fundInput = document.createElement('input');
+                fundInput.className = 'input fund';
+                fundInput.placeholder = 'Фонд';
+                fundInput.value = part && part.fund ? part.fund : '';
+                if (datalistId) fundInput.setAttribute('list', datalistId);
+
+                const amountInput = document.createElement('input');
+                amountInput.className = 'input amt';
+                amountInput.type = 'number';
+                amountInput.step = '0.01';
+                amountInput.placeholder = 'Сума';
+                const absVal = part && part.amount != null ? Math.abs(Number(part.amount) || 0) : '';
+                amountInput.value = absVal === '' ? '' : absVal;
+
+                const detailsInput = document.createElement('input');
+                detailsInput.className = 'input det';
+                detailsInput.placeholder = 'Деталі';
+                detailsInput.value = part && part.details ? part.details : '';
+
+                const removeBtn = document.createElement('button');
+                removeBtn.className = 'btn btn--ghost rm';
+                removeBtn.type = 'button';
+                removeBtn.innerHTML = '&times;';
+                removeBtn.addEventListener('click', () => row.remove());
+
+                row.appendChild(fundInput);
+                row.appendChild(amountInput);
+                row.appendChild(detailsInput);
+                row.appendChild(removeBtn);
+                rowsHost.appendChild(row);
+              }
+
+              (existingParts.length ? existingParts : [{}]).forEach(addRow);
+              if (addBtn) addBtn.addEventListener('click', () => addRow({}));
+
+              if (okBtn) okBtn.addEventListener('click', function(ev){
+                const rows = Array.from(rowsHost.querySelectorAll('.split-row'));
+                const parts = [];
+                rows.forEach((row) => {
+                  const fund = row.querySelector('.fund').value.trim();
+                  const amountStr = row.querySelector('.amt').value;
+                  const amountNum = amountStr === '' ? NaN : Number(amountStr);
+                  const details = row.querySelector('.det').value.trim();
+                  const itemId = row.dataset.itemId || '';
+                  if (!fund && !details && (amountStr === '' || isNaN(amountNum))) {
+                    return;
+                  }
+                  parts.push({
+                    itemId,
+                    fund,
+                    amount: Math.abs(isNaN(amountNum) ? 0 : amountNum),
+                    details
+                  });
+                });
+                const sum = parts.reduce((s, p) => s + Math.abs(Number(p.amount) || 0), 0);
+                if (sum > (payload.mainAmount || 0) + 1e-6) {
+                  if (errorEl) errorEl.textContent = 'Сума частин перевищує початкову. Виправте.';
+                  ev.preventDefault();
+                  ev.stopImmediatePropagation();
+                  return;
+                }
+                if (errorEl) errorEl.textContent = '';
+                formResult = {
+                  mainFund: mainFundInput ? mainFundInput.value.trim() : '',
+                  mainDetails: mainDetailsInput ? mainDetailsInput.value.trim() : '',
+                  parts
+                };
+              }, true);
+            }
+          });
+
+          if (!confirmed) return;
+          if (!formResult) {
+            formResult = {
+              mainFund: payload.mainItem && payload.mainItem.fund || '',
+              mainDetails: payload.mainItem && payload.mainItem.details || '',
+              parts: []
+            };
+          }
+
+          const savePayload = {
+            bankId: payload.bankId,
+            year: payload.year,
+            mainItem: Object.assign({}, payload.mainItem, {
+              fund: formResult.mainFund,
+              details: formResult.mainDetails
+            }),
+            items: formResult.parts.map((p) => ({
+              itemId: p.itemId,
+              fund: p.fund,
+              amount: Math.abs(Number(p.amount) || 0),
+              details: p.details
+            })),
+            indexMap: payload.indexMap
+          };
+
+          const saveResult = await new Promise((resolve, reject) => {
+            google.script.run
+              .withFailureHandler(reject)
+              .withSuccessHandler(resolve)
+              .txSaveSplitAllocation(savePayload);
+          });
+
+          if (saveResult && saveResult.ok) {
+            await uiModal.alert('Рознесення збережено', 'Готово');
+            if (typeof opsFetch === 'function') opsFetch();
+          }
+        } catch (err) {
+          console.error(err);
+          if (uiModal && typeof uiModal.alert === 'function') {
+            await uiModal.alert(String(err && err.message || err || 'Помилка'), 'Помилка');
+          } else if (typeof window !== 'undefined' && window.alert) {
+            window.alert(String(err && err.message || err || 'Помилка'));
+          }
+        }
+      });
     }
 
     // ===== GLOBAL LOADER FUNCTIONS =====
@@ -965,6 +1177,7 @@
       };
     }
 
+    setupSplitActions();
     init();
 </script>
 <script>
@@ -974,13 +1187,21 @@ window.uiModal = (function(){
   const el = id => document.getElementById(id);
   let prevActive = null;
 
-  function open({ title='', body='', okText='OK', cancelText='Скасувати', showCancel=false, trap=true }) {
+  function open({ title='', body='', okText='OK', cancelText='Скасувати', showCancel=false, trap=true, onOpen=null }) {
     const r = root(); if(!r) return;
     el('app-modal-title').textContent = title;
     el('app-modal-body').innerHTML = body;
     const okBtn = el('app-modal-ok'); okBtn.textContent = okText;
     const cancelBtn = el('app-modal-cancel'); cancelBtn.textContent = cancelText;
     cancelBtn.style.display = showCancel ? '' : 'none';
+
+    if (typeof onOpen === 'function') {
+      try {
+        onOpen({ root: r, bodyEl: el('app-modal-body'), okBtn, cancelBtn });
+      } catch (err) {
+        console.error(err);
+      }
+    }
 
     return new Promise((resolve)=> {
       const close = (result) => {
@@ -1007,6 +1228,18 @@ window.uiModal = (function(){
       const ok = await open({ title, showCancel:true, okText:'Зберегти', body:`<label style="display:block;margin-bottom:8px">${label}</label><input id="${id}" class="input" placeholder="${placeholder}" value="${defaultValue||''}" style="width:100%;padding:10px;border-radius:8px;border:1px solid #2a2a2a;background:#0f0f0f;color:#f3f3f3">` });
       if(!ok) return null;
       const v = document.getElementById(id).value; return v;
+    },
+    custom: async (cfg={}) => {
+      const {
+        title='Модальне вікно',
+        body='',
+        okText='Зберегти',
+        cancelText='Скасувати',
+        showCancel=true,
+        trap=true,
+        onOpen=null
+      } = cfg || {};
+      return open({ title, body, okText, cancelText, showCancel, trap, onOpen });
     }
   };
 })();
