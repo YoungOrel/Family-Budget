@@ -271,10 +271,34 @@
         100% { transform: translateX(-100%); }
     }
     
+    /* === Modal (global, cautious) — UA: обережні підтвердження / EN: custom modal === */
+    .modal-root{position:fixed;inset:0;z-index:1000}
+    .modal-backdrop{position:absolute;inset:0;background:rgba(0,0,0,.6)}
+    .modal-card{position:relative;margin:8vh auto 0;max-width:520px;background:#141414;color:#f3f3f3;border:1px solid #222;border-radius:12px;box-shadow:0 12px 40px rgba(0,0,0,.6);padding:16px;display:flex;flex-direction:column;gap:12px}
+    .modal-title{font-weight:700;font-size:18px}
+    .modal-body{font-size:14px;color:#cfcfcf}
+    .modal-actions{display:flex;justify-content:flex-end;gap:12px}
+    .btn{border-radius:10px;padding:10px 14px;border:1px solid #2a2a2a;background:#1b1b1b;color:#f3f3f3;cursor:pointer}
+    .btn--primary{background:#ffcc00;color:#0b0b0b;border-color:#ffcc00;font-weight:700}
+    .btn:focus{outline:2px solid #ffcc00;outline-offset:2px}
+    body.modal-open{overflow:hidden}
+
   </style>
 </head>
 <body>
-  <body>
+<!-- === Global Modal (custom, cautious) =================================== -->
+<div id="app-modal" aria-hidden="true" class="modal-root" style="display:none">
+  <div class="modal-backdrop" data-modal-close></div>
+  <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="app-modal-title">
+    <div class="modal-title" id="app-modal-title"></div>
+    <div class="modal-body" id="app-modal-body"></div>
+    <div class="modal-actions">
+      <button class="btn btn--ghost" id="app-modal-cancel" data-modal-cancel>Скасувати</button>
+      <button class="btn btn--primary" id="app-modal-ok" data-modal-ok>OK</button>
+    </div>
+  </div>
+</div>
+<!-- ======================================================================= -->
   <!-- ДОДАЙ ЦЕЙ БЛОК -->
   <div class="global-loader" id="global-loader" aria-hidden="true">
     <div class="global-spinner"></div>
@@ -942,6 +966,51 @@
     }
 
     init();
-  </script>
+</script>
+<script>
+// === uiModal: alert / confirm / prompt (cautious) =========================
+window.uiModal = (function(){
+  const root = () => document.getElementById('app-modal');
+  const el = id => document.getElementById(id);
+  let prevActive = null;
+
+  function open({ title='', body='', okText='OK', cancelText='Скасувати', showCancel=false, trap=true }) {
+    const r = root(); if(!r) return;
+    el('app-modal-title').textContent = title;
+    el('app-modal-body').innerHTML = body;
+    const okBtn = el('app-modal-ok'); okBtn.textContent = okText;
+    const cancelBtn = el('app-modal-cancel'); cancelBtn.textContent = cancelText;
+    cancelBtn.style.display = showCancel ? '' : 'none';
+
+    return new Promise((resolve)=> {
+      const close = (result) => {
+        r.style.display = 'none'; document.body.classList.remove('modal-open');
+        r.setAttribute('aria-hidden','true'); cleanup(); if(prevActive) prevActive.focus(); resolve(result);
+      };
+      function onKey(e){ if(e.key==='Escape'){ e.preventDefault(); close(null);} if(e.key==='Enter'&&document.activeElement===okBtn){ e.preventDefault(); close(true);} }
+      function onBackdrop(e){ if(e.target.hasAttribute('data-modal-close')) close(null); }
+      function cleanup(){ okBtn.removeEventListener('click', okH); cancelBtn.removeEventListener('click', cancelH); r.removeEventListener('keydown', onKey); r.removeEventListener('click', onBackdrop); }
+      function okH(){ close(true); } function cancelH(){ close(null); }
+
+      prevActive = document.activeElement; r.style.display='block'; document.body.classList.add('modal-open'); r.removeAttribute('aria-hidden');
+      okBtn.addEventListener('click', okH); cancelBtn.addEventListener('click', cancelH);
+      r.addEventListener('keydown', onKey); r.addEventListener('click', onBackdrop);
+      if(trap) okBtn.focus();
+    });
+  }
+  return {
+    alert: async (msg, title='Повідомлення') => { await open({title, body: `<p>${msg}</p>`, showCancel:false}); },
+    confirm: async (msg, title='Підтвердження') => !!(await open({title, body:`<p>${msg}</p>`, showCancel:true, okText:'Підтвердити'})),
+    prompt: async (cfg) => {
+      const { title='Введення', label='Значення', placeholder='', defaultValue='' } = (cfg||{});
+      const id='modal-input-'+Date.now();
+      const ok = await open({ title, showCancel:true, okText:'Зберегти', body:`<label style="display:block;margin-bottom:8px">${label}</label><input id="${id}" class="input" placeholder="${placeholder}" value="${defaultValue||''}" style="width:100%;padding:10px;border-radius:8px;border:1px solid #2a2a2a;background:#0f0f0f;color:#f3f3f3">` });
+      if(!ok) return null;
+      const v = document.getElementById(id).value; return v;
+    }
+  };
+})();
+// ========================================================================
+</script>
 </body>
 </html>
